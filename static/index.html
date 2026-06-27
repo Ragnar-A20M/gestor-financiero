@@ -8,12 +8,39 @@
     <style>
         * { box-sizing: border-box; margin:0; padding:0; }
         body { font-family:'Segoe UI',Arial,sans-serif; background:#0d1117; color:#c9d1d9; padding:0; }
-        
-        .header { background:linear-gradient(135deg,#161b22,#0d1117); border-bottom:1px solid #30363d; padding:18px 28px; display:flex; align-items:center; justify-content:space-between; }
-        .header h1 { font-size:22px; color:#58a6ff; display:flex; align-items:center; gap:10px; }
-        .header h1 span { font-size:14px; color:#8b949e; font-weight:normal; }
+
+        /* ===== LOGIN OVERLAY ===== */
+        #loginOverlay {
+            position:fixed; top:0; left:0; width:100%; height:100%;
+            background:#0d1117; display:flex; align-items:center; justify-content:center;
+            z-index:9999;
+        }
+        #loginOverlay.hidden { display:none; }
+        .login-box {
+            background:#161b22; border:1px solid #30363d; border-radius:12px;
+            padding:40px; width:360px; text-align:center;
+        }
+        .login-box h1 { color:#58a6ff; font-size:24px; margin-bottom:6px; }
+        .login-box p { color:#8b949e; font-size:14px; margin-bottom:24px; }
+        .login-box input {
+            width:100%; padding:10px 14px; margin-bottom:12px;
+            background:#0d1117; color:#c9d1d9; border:1px solid #30363d;
+            border-radius:6px; font-size:14px; font-family:inherit;
+        }
+        .login-box input:focus { outline:none; border-color:#58a6ff; }
+        .login-box button {
+            width:100%; padding:10px; background:#238636; color:#fff;
+            border:none; border-radius:6px; font-size:14px; font-weight:600;
+            cursor:pointer; font-family:inherit;
+        }
+        .login-box button:hover { background:#2ea043; }
+        .login-error { color:#f85149; font-size:13px; margin-top:8px; display:none; }
         .header-right { display:flex; align-items:center; gap:15px; }
-        .badge { background:#21262d; color:#8b949e; padding:4px 12px; border-radius:20px; font-size:12px; border:1px solid #30363d; }
+        .btn-logout {
+            background:transparent; color:#8b949e; border:1px solid #30363d;
+            padding:4px 12px; border-radius:6px; cursor:pointer; font-size:12px; font-family:inherit;
+        }
+        .btn-logout:hover { color:#f85149; border-color:#f85149; }
 
         .tabs { display:flex; gap:0; background:#161b22; border-bottom:1px solid #30363d; padding:0 20px; }
         .tab-btn { padding:12px 22px; cursor:pointer; background:transparent; color:#8b949e; border:none; border-bottom:2px solid transparent; font-size:14px; font-weight:500; transition:all .2s; font-family:inherit; }
@@ -107,11 +134,24 @@
 </head>
 <body>
 
+<!-- ===== LOGIN OVERLAY ===== -->
+<div id="loginOverlay">
+    <div class="login-box">
+        <h1>🔐 Gestor Financiero</h1>
+        <p>Inicia sesión para continuar</p>
+        <input type="text" id="loginUser" placeholder="Usuario" autocomplete="username">
+        <input type="password" id="loginPass" placeholder="Contraseña" autocomplete="current-password">
+        <button id="btnLogin">Iniciar sesión</button>
+        <div class="login-error" id="loginError">Credenciales inválidas</div>
+    </div>
+</div>
+
 <div class="header">
     <h1>📊 Gestor Financiero <span>Web · Axum</span></h1>
     <div class="header-right">
         <span class="badge">🐘 finanzas_db</span>
         <button id="btnExportCSV" class="btn-outline btn-xs">📥 Exportar CSV</button>
+        <button id="btnLogout" class="btn-logout" style="display:none;">🔒 Cerrar sesión</button>
     </div>
 </div>
 
@@ -253,16 +293,26 @@
 <div id="toast"></div>
 
 <script>
-// ---- API helper: reemplaza invoke() por fetch() ----
+// ---- API helper con autenticación ----
 const API = '/api';
 
+function getToken() { return localStorage.getItem('auth_token'); }
+
 async function api(method, path, body) {
+    const token = getToken();
     const opts = { method, headers: {} };
+    if (token) opts.headers['Authorization'] = 'Bearer ' + token;
     if (body) {
         opts.headers['Content-Type'] = 'application/json';
         opts.body = JSON.stringify(body);
     }
     const res = await fetch(API + path, opts);
+    if (res.status === 401) {
+        localStorage.removeItem('auth_token');
+        document.getElementById('loginOverlay').classList.remove('hidden');
+        document.getElementById('btnLogout').style.display = 'none';
+        throw new Error('Sesión expirada. Inicia sesión de nuevo.');
+    }
     if (!res.ok) {
         const errText = await res.text().catch(() => 'Error de red');
         throw new Error(errText || `HTTP ${res.status}`);
@@ -567,7 +617,62 @@ async function cargarCatalogos() {
     try{const cl=await apiGET('/clasif-egresos'); window._clasif=cl; llenarSelect('devInsClasif',cl,'clas_id','desc_clas');}catch(e){console.error(e);}
     try{const fp=await apiGET('/formas-pago'); window._formasPago=fp; llenarSelect('devInsFormaPago',fp,'fp_id','desc_fp');}catch(e){console.error(e);}
 }
-document.addEventListener('DOMContentLoaded',()=>{cargarCatalogos();cargarDashboard();});
+document.addEventListener('DOMContentLoaded',()=>{
+    // Check if already logged in
+    if (getToken()) {
+        document.getElementById('loginOverlay').classList.add('hidden');
+        document.getElementById('btnLogout').style.display = 'inline-block';
+        cargarCatalogos();
+        cargarDashboard();
+    }
+});
+
+// ---- LOGIN / LOGOUT ----
+document.getElementById('btnLogin').addEventListener('click', async () => {
+    const username = document.getElementById('loginUser').value;
+    const password = document.getElementById('loginPass').value;
+    const errEl = document.getElementById('loginError');
+    if (!username || !password) { errEl.textContent = 'Completa todos los campos'; errEl.style.display = 'block'; return; }
+    try {
+        const res = await fetch('/api/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, password })
+        });
+        if (!res.ok) { errEl.style.display = 'block'; return; }
+        const data = await res.json();
+        localStorage.setItem('auth_token', data.token);
+        document.getElementById('loginOverlay').classList.add('hidden');
+        document.getElementById('btnLogout').style.display = 'inline-block';
+        errEl.style.display = 'none';
+        document.getElementById('loginUser').value = '';
+        document.getElementById('loginPass').value = '';
+        cargarCatalogos();
+        cargarDashboard();
+    } catch(e) {
+        errEl.textContent = 'Error de conexion';
+        errEl.style.display = 'block';
+    }
+});
+
+document.getElementById('btnLogout').addEventListener('click', () => {
+    localStorage.removeItem('auth_token');
+    document.getElementById('loginOverlay').classList.remove('hidden');
+    document.getElementById('btnLogout').style.display = 'none';
+    // Clear data
+    document.getElementById('dashGrid').innerHTML = '';
+    document.getElementById('output').innerHTML = '';
+    document.getElementById('outputDev').innerHTML = '';
+    document.getElementById('outputDif').innerHTML = '';
+});
+
+// Enter key on password field triggers login
+document.getElementById('loginPass').addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') document.getElementById('btnLogin').click();
+});
+document.getElementById('loginUser').addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') document.getElementById('loginPass').focus();
+});
 </script>
 </body>
 </html>

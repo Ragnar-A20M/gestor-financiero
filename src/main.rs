@@ -5,24 +5,83 @@
 
 use axum::{
     extract::{Query, State},
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     response::{Html, Json},
     routing::{get, post},
     Router,
 };
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use sqlx::PgPool;
+use std::collections::HashMap;
 use std::sync::Arc;
+use tokio::sync::Mutex;
 use tower_http::cors::CorsLayer;
+use uuid::Uuid;
 
 mod db;
 use db::{
     ClasifEgreso, Concepto, DeudaPendiente, Devengado, DiferenciaResult, FormaPago, Tirilla,
 };
 
-/// Estado compartido: pool de conexiones a PostgreSQL.
+/// Estado compartido: pool de conexiones + sesiones activas
 struct AppState {
     db: PgPool,
+    sesiones: Arc<Mutex<HashMap<String, String>>>,
+    admin_username: String,
+    admin_password_hash: String,
+}
+
+// =============================================================================
+// Autenticación
+// =============================================================================
+
+#[derive(Deserialize)]
+struct LoginBody {
+    username: String,
+    password: String,
+}
+
+#[derive(Serialize)]
+struct LoginResponse {
+    token: String,
+}
+
+#[derive(Serialize)]
+struct MsgError {
+    error: String,
+}
+
+/// Extrae el token Bearer del header Authorization
+fn extraer_token(headers: &HeaderMap) -> Option<String> {
+    headers
+        .get("authorization")?
+        .to_str()
+        .ok()?
+        .strip_prefix("Bearer ")
+        .map(|s| s.to_string())
+}
+
+/// Valida el token. Retorna Ok(token) o Err(401)
+async fn verificar_auth(
+    headers: &HeaderMap,
+    sesiones: &Arc<Mutex<HashMap<String, String>>>,
+) -> Result<String, (StatusCode, Json<MsgError>)> {
+    let token = extraer_token(headers).ok_or_else(|| {
+        (
+            StatusCode::UNAUTHORIZED,
+            Json(MsgError { error: "Token requerido".into() }),
+        )
+    })?;
+    let map = sesiones.lock().await;
+    if map.contains_key(&token) {
+        Ok(token)
+    } else {
+        Err((
+            StatusCode::UNAUTHORIZED,
+            Json(MsgError { error: "Token inválido".into() }),
+        ))
+    }
 }
 
 // =============================================================================
@@ -101,12 +160,35 @@ struct DevengadosFiltro {
 }
 
 // =============================================================================
+// Handler: LOGIN
+// =============================================================================
+
+async fn api_login(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<LoginBody>,
+) -> Result<Json<LoginResponse>, (StatusCode, Json<MsgError>)> {
+    if body.username != state.admin_username {
+        return Err((StatusCode::UNAUTHORIZED, Json(MsgError { error: "Credenciales inválidas".into() })));
+    }
+    let input_hash = hex::encode(Sha256::digest(body.password.as_bytes()));
+    if input_hash != state.admin_password_hash {
+        return Err((StatusCode::UNAUTHORIZED, Json(MsgError { error: "Credenciales inválidas".into() })));
+    }
+    let token = Uuid::new_v4().to_string();
+    state.sesiones.lock().await.insert(token.clone(), body.username);
+    Ok(Json(LoginResponse { token }))
+}
+
+// =============================================================================
 // Handlers: TIRILLAS
 // =============================================================================
 
 async fn api_get_tirillas(
     State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
 ) -> Result<Json<Vec<Tirilla>>, (StatusCode, String)> {
+    verificar_auth(&headers, &state.sesiones).await
+        .map_err(|(s, _)| (s, "No autorizado".into()))?;
     db::get_tirillas(&state.db)
         .await
         .map(Json)
@@ -115,8 +197,11 @@ async fn api_get_tirillas(
 
 async fn api_get_tirillas_filtradas(
     State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
     Query(filtro): Query<TirillasFiltro>,
 ) -> Result<Json<Vec<Tirilla>>, (StatusCode, String)> {
+    verificar_auth(&headers, &state.sesiones).await
+        .map_err(|(s, _)| (s, "No autorizado".into()))?;
     db::get_tirillas_filtradas(&state.db, filtro.anio, filtro.periodo)
         .await
         .map(Json)
@@ -125,8 +210,11 @@ async fn api_get_tirillas_filtradas(
 
 async fn api_insert_tirilla(
     State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
     Json(body): Json<InsertTirillaBody>,
 ) -> Result<StatusCode, (StatusCode, String)> {
+    verificar_auth(&headers, &state.sesiones).await
+        .map_err(|(s, _)| (s, "No autorizado".into()))?;
     db::insert_tirilla(
         &state.db,
         body.anio,
@@ -175,8 +263,11 @@ async fn api_recalcular_total(
 
 async fn api_get_disponible(
     State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
     Query(filtro): Query<AnioFiltro>,
 ) -> Result<Json<Vec<DiferenciaResult>>, (StatusCode, String)> {
+    verificar_auth(&headers, &state.sesiones).await
+        .map_err(|(s, _)| (s, "No autorizado".into()))?;
     db::get_diferencia(&state.db, filtro.anio)
         .await
         .map(Json)
@@ -287,13 +378,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
     let pool = PgPool::connect(&database_url).await?;
 
-    let state = Arc::new(AppState { db: pool });
+    let sesiones: Arc<Mutex<HashMap<String, String>>> = Arc::new(Mutex::new(HashMap::new()));
+    let admin_username = std::env::var("ADMIN_USERNAME").unwrap_or_else(|_| "admin".to_string());
+    let admin_password = std::env::var("ADMIN_PASSWORD").expect("ADMIN_PASSWORD must be set");
+    let admin_password_hash = hex::encode(Sha256::digest(admin_password.as_bytes()));
+
+    let state = Arc::new(AppState { db: pool, sesiones, admin_username, admin_password_hash });
 
     let cors = CorsLayer::permissive();
 
     let app = Router::new()
         // Servir frontend
         .route("/", get(|| async { Html(include_str!("../static/index.html")) }))
+        // Login
+        .route("/api/login", post(api_login))
         // Tirillas
         .route("/api/tirillas", get(api_get_tirillas).post(api_insert_tirilla))
         .route("/api/tirillas/filtradas", get(api_get_tirillas_filtradas))
