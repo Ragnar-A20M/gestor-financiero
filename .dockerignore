@@ -1,6 +1,7 @@
-target/
+target/debug/
 .git/
 *.md
 .env
 .env.example
 sql/
+*.py
