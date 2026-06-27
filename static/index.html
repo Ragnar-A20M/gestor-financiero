@@ -1,0 +1,573 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Gestor Financiero</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        * { box-sizing: border-box; margin:0; padding:0; }
+        body { font-family:'Segoe UI',Arial,sans-serif; background:#0d1117; color:#c9d1d9; padding:0; }
+        
+        .header { background:linear-gradient(135deg,#161b22,#0d1117); border-bottom:1px solid #30363d; padding:18px 28px; display:flex; align-items:center; justify-content:space-between; }
+        .header h1 { font-size:22px; color:#58a6ff; display:flex; align-items:center; gap:10px; }
+        .header h1 span { font-size:14px; color:#8b949e; font-weight:normal; }
+        .header-right { display:flex; align-items:center; gap:15px; }
+        .badge { background:#21262d; color:#8b949e; padding:4px 12px; border-radius:20px; font-size:12px; border:1px solid #30363d; }
+
+        .tabs { display:flex; gap:0; background:#161b22; border-bottom:1px solid #30363d; padding:0 20px; }
+        .tab-btn { padding:12px 22px; cursor:pointer; background:transparent; color:#8b949e; border:none; border-bottom:2px solid transparent; font-size:14px; font-weight:500; transition:all .2s; font-family:inherit; }
+        .tab-btn:hover { color:#58a6ff; background:#1c2128; }
+        .tab-btn.active { color:#58a6ff; border-bottom-color:#58a6ff; background:linear-gradient(0deg,rgba(88,166,255,0.08),transparent); }
+
+        .main { padding:20px; max-width:1400px; margin:0 auto; }
+        .tab-content { display:none; }
+        .tab-content.active { display:block; animation:fadeIn .25s ease; }
+        @keyframes fadeIn { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
+
+        .card { background:#161b22; border:1px solid #30363d; border-radius:8px; padding:16px 20px; margin-bottom:16px; }
+        .card-title { font-size:12px; text-transform:uppercase; letter-spacing:0.5px; color:#8b949e; margin-bottom:12px; font-weight:600; }
+
+        .dash-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:12px; margin-bottom:20px; }
+        .dash-card { background:#161b22; border:1px solid #30363d; border-radius:8px; padding:18px; transition:transform .2s,border-color .2s; }
+        .dash-card:hover { transform:translateY(-2px); border-color:#58a6ff; }
+        .dash-card .icon { font-size:24px; margin-bottom:6px; }
+        .dash-card .value { font-size:26px; font-weight:700; color:#f0f6fc; }
+        .dash-card .label { font-size:12px; color:#8b949e; margin-top:4px; }
+        .dash-card.ing { border-left:3px solid #3fb950; }
+        .dash-card.egr { border-left:3px solid #f85149; }
+        .dash-card.dif { border-left:3px solid #58a6ff; }
+        .dash-card.reg { border-left:3px solid #d2a8ff; }
+
+        .filtros, .insert-form { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+        .filtros input, .insert-form input, .insert-form select { background:#0d1117; color:#c9d1d9; border:1px solid #30363d; border-radius:6px; padding:7px 10px; font-size:13px; font-family:inherit; transition:border-color .2s; }
+        .filtros input:focus, .insert-form input:focus, .insert-form select:focus { outline:none; border-color:#58a6ff; }
+        .insert-form input[type="text"] { width:170px; }
+        .insert-form select { width:150px; cursor:pointer; }
+        .filtros input[type="number"] { width:80px; }
+
+        button { padding:7px 16px; cursor:pointer; border:none; border-radius:6px; font-size:13px; font-weight:500; font-family:inherit; transition:all .2s; display:inline-flex; align-items:center; gap:5px; }
+        button:active { transform:scale(0.97); }
+        .btn-primary { background:#238636; color:#fff; }
+        .btn-primary:hover { background:#2ea043; }
+        .btn-danger { background:#da3633; color:#fff; }
+        .btn-danger:hover { background:#f85149; }
+        .btn-chart { background:#1f6feb; color:#fff; }
+        .btn-chart:hover { background:#388bfd; }
+        .btn-sql { background:#1f6feb; color:#fff; }
+        .btn-sql:hover { background:#388bfd; }
+        .btn-dev { background:#9e6a03; color:#fff; }
+        .btn-dev:hover { background:#bb8009; }
+        .btn-outline { background:transparent; color:#c9d1d9; border:1px solid #30363d; }
+        .btn-outline:hover { background:#1c2128; border-color:#8b949e; }
+        .btn-xs { padding:3px 10px; font-size:12px; }
+
+        .section-title { font-size:13px; font-weight:600; color:#8b949e; margin:18px 0 10px 0; padding-bottom:6px; border-bottom:1px solid #21262d; display:flex; align-items:center; gap:8px; }
+
+        .table-wrap { overflow-x:auto; border-radius:8px; border:1px solid #30363d; }
+        table { border-collapse:collapse; width:100%; font-size:13px; }
+        th { background:#1c2128; padding:10px 14px; text-align:left; font-weight:600; color:#8b949e; font-size:12px; text-transform:uppercase; letter-spacing:0.3px; }
+        td { padding:8px 14px; border-top:1px solid #21262d; }
+        tr:hover td { background:#1c2128; }
+        .edit-btn { padding:3px 10px; font-size:12px; background:#21262d; color:#58a6ff; border:1px solid #30363d; border-radius:4px; }
+        .edit-btn:hover { background:#30363d; border-color:#58a6ff; }
+        .total-info { color:#8b949e; font-size:12px; margin-top:8px; text-align:right; }
+
+        #graficoContainer { display:none; background:#161b22; border:1px solid #30363d; border-radius:8px; padding:20px; margin-top:15px; }
+
+        #output, #outputDev, #outputDif { margin-top:12px; border-radius:8px; border:1px solid #30363d; overflow:hidden; }
+        .error { color:#f85149; }
+        .loading { color:#58a6ff; }
+        .info { color:#8b949e; }
+        .success { color:#3fb950; }
+
+        .modal-overlay { display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); z-index:1000; align-items:center; justify-content:center; backdrop-filter:blur(4px); }
+        .modal-box { background:#161b22; border:1px solid #30363d; border-radius:12px; padding:24px; width:520px; max-width:90%; margin:auto; box-shadow:0 20px 60px rgba(0,0,0,0.5); animation:modalIn .2s ease; }
+        @keyframes modalIn { from{transform:scale(0.95);opacity:0} to{transform:scale(1);opacity:1} }
+        .modal-box h3 { font-size:16px; color:#58a6ff; margin-bottom:16px; }
+        .modal-box label { display:inline-block; width:90px; font-size:13px; color:#8b949e; }
+        .modal-box input, .modal-box select { background:#0d1117; color:#c9d1d9; border:1px solid #30363d; border-radius:6px; padding:7px; margin:5px 0; font-size:13px; }
+        .modal-box input:focus, .modal-box select:focus { outline:none; border-color:#58a6ff; }
+        .modal-box .btn-row { margin-top:18px; display:flex; gap:10px; justify-content:flex-end; }
+        .modal-box select { width:250px; }
+
+        #toast { position:fixed; bottom:20px; right:20px; padding:12px 20px; border-radius:8px; font-size:14px; z-index:9999; display:none; animation:slideIn .3s ease; box-shadow:0 8px 32px rgba(0,0,0,0.4); }
+        @keyframes slideIn { from{transform:translateX(100px);opacity:0} to{transform:translateX(0);opacity:1} }
+        #toast.success { background:#238636; color:#fff; border:1px solid #2ea043; }
+        #toast.error { background:#da3633; color:#fff; border:1px solid #f85149; }
+        #toast.info { background:#1f6feb; color:#fff; border:1px solid #388bfd; }
+
+        ::-webkit-scrollbar { width:8px; height:8px; }
+        ::-webkit-scrollbar-track { background:#0d1117; }
+        ::-webkit-scrollbar-thumb { background:#30363d; border-radius:4px; }
+        ::-webkit-scrollbar-thumb:hover { background:#484f58; }
+
+        @media(max-width:768px){ .header{flex-direction:column;gap:10px;align-items:flex-start;} .tabs{overflow-x:auto;} .tab-btn{padding:10px 14px;font-size:13px;} .insert-form{flex-direction:column;align-items:stretch;} .insert-form select,.insert-form input{width:100%!important;} .dash-grid{grid-template-columns:1fr 1fr;} .filtros{flex-direction:column;align-items:stretch;} .filtros input{width:100%!important;} .modal-box{width:95%;} }
+    </style>
+</head>
+<body>
+
+<div class="header">
+    <h1>📊 Gestor Financiero <span>Web · Axum</span></h1>
+    <div class="header-right">
+        <span class="badge">🐘 finanzas_db</span>
+        <button id="btnExportCSV" class="btn-outline btn-xs">📥 Exportar CSV</button>
+    </div>
+</div>
+
+<div class="tabs">
+    <button class="tab-btn active" data-tab="tabDashboard">🏠 Dashboard</button>
+    <button class="tab-btn" data-tab="tabTirillas">📋 Tirillas</button>
+    <button class="tab-btn" data-tab="tabDevengado">📋 Devengado</button>
+    <button class="tab-btn" data-tab="tabDisponible">📊 Disponible</button>
+</div>
+
+<div class="main">
+
+<div id="tabDashboard" class="tab-content active">
+    <div class="dash-grid" id="dashGrid">
+        <div class="dash-card ing"><div class="icon">📈</div><div class="value" id="dashIngresos">-</div><div class="label">Total Ingresos (tipo 1,3)</div></div>
+        <div class="dash-card egr"><div class="icon">📉</div><div class="value" id="dashEgresos">-</div><div class="label">Total Egresos</div></div>
+        <div class="dash-card dif"><div class="icon">⚖️</div><div class="value" id="dashDiferencia">-</div><div class="label">Diferencia Neta</div></div>
+        <div class="dash-card reg"><div class="icon">📦</div><div class="value" id="dashTirillas">-</div><div class="label">Registros en Tirillas</div></div>
+    </div>
+    <div class="card">
+        <div class="card-title">📈 Últimos períodos</div>
+        <div id="dashOutput" style="font-size:13px;color:#8b949e;">Cargando datos del dashboard...</div>
+    </div>
+    <div class="card">
+        <div class="card-title" style="color:#f85149;">⚠️ Deudas Pendientes</div>
+        <div id="dashDeudas" style="font-size:13px;color:#8b949e;">Cargando deudas...</div>
+    </div>
+</div>
+
+<div id="tabTirillas" class="tab-content">
+    <div class="card">
+        <div class="card-title">🔍 Consultar Tirillas</div>
+        <div class="filtros">
+            <input type="number" id="filtroAnio" placeholder="Año" />
+            <input type="number" id="filtroPeriodo" placeholder="Periodo" />
+            <button id="btnFiltrar" class="btn-primary btn-xs">🔍 Filtrar</button>
+            <button id="btnTodo" class="btn-outline btn-xs">📋 Todas</button>
+            <button id="btnLimpiarTir" class="btn-danger btn-xs">🗑️ Limpiar</button>
+        </div>
+    </div>
+    <div class="card">
+        <div class="card-title">➕ Insertar Tirilla</div>
+        <div class="insert-form">
+            <input type="number" id="insAnio" placeholder="Año" />
+            <input type="number" id="insPeriodo" placeholder="Periodo" />
+            <input type="number" id="insForma" placeholder="Forma" />
+            <select id="insConcepto"><option>Cargando...</option></select>
+            <input type="number" id="insMonto" step="0.01" placeholder="Monto" />
+            <input type="number" id="insEstatus" placeholder="Estatus" />
+            <button id="btnInsertar" class="btn-primary btn-xs">💾 Insertar</button>
+            <button id="btnCalcularTotal" class="btn-chart btn-xs">🧮 Calcular Total</button>
+        </div>
+    </div>
+    <div id="output" class="table-wrap"></div>
+</div>
+
+<div id="tabDevengado" class="tab-content">
+    <div class="card">
+        <div class="card-title">🔍 Consultar Devengados</div>
+        <div class="filtros">
+            <input type="number" id="devFiltroAnio" placeholder="Año" />
+            <input type="number" id="devFiltroPeriodo" placeholder="Periodo" />
+            <input type="number" id="devFiltroEstatus" placeholder="Estatus" style="width:70px;" />
+            <button id="btnDevFiltrar" class="btn-dev btn-xs">🔍 Filtrar</button>
+            <button id="btnDevTodos" class="btn-outline btn-xs">📋 Todos</button>
+            <button id="btnLimpiarDev" class="btn-danger btn-xs">🗑️ Limpiar</button>
+        </div>
+    </div>
+    <div class="card">
+        <div class="card-title">➕ Insertar Devengado</div>
+        <div class="insert-form">
+            <input type="number" id="devInsAnio" placeholder="Año" />
+            <input type="number" id="devInsPeriodo" placeholder="Periodo" />
+            <input type="text" id="devInsConcepto" placeholder="Concepto" />
+            <select id="devInsClasif"><option>Cargando...</option></select>
+            <select id="devInsFormaPago"><option>Cargando...</option></select>
+            <input type="number" id="devInsMonto" step="0.01" placeholder="Monto" />
+            <input type="number" id="devInsEstatus" placeholder="Estatus" />
+            <button id="btnDevInsertar" class="btn-primary btn-xs">💾 Insertar</button>
+        </div>
+    </div>
+    <div id="outputDev" class="table-wrap"></div>
+</div>
+
+<div id="tabDisponible" class="tab-content">
+    <div class="card">
+        <div class="card-title">🔍 Filtrar por Año</div>
+        <div class="filtros">
+            <input type="number" id="dispFiltroAnio" placeholder="Año" />
+            <button id="btnDispFiltrar" class="btn-primary btn-xs">🔍 Filtrar</button>
+            <button id="btnDispTodos" class="btn-outline btn-xs">📋 Todos</button>
+        </div>
+    </div>
+    <div class="card">
+        <div class="card-title">📈 Cálculo de Disponible</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button id="btnGrafico" class="btn-chart">📊 Ver Gráfico</button>
+            <button id="btnMostrarTabla" class="btn-outline" style="display:none;">📋 Mostrar tabla</button>
+            <button id="btnLimpiarDif" class="btn-danger">🗑️ Limpiar</button>
+        </div>
+    </div>
+    <div id="outputDif" class="table-wrap"></div>
+    <div id="graficoContainer"><canvas id="miGrafico"></canvas></div>
+</div>
+
+</div><!-- main -->
+
+<div id="modalTir" class="modal-overlay"><div class="modal-box">
+    <h3>✏️ Editar Tirilla</h3>
+    <label>ID:</label> <span id="editTirId" style="color:#58a6ff;"></span><br/>
+    <label>Año:</label> <input type="number" id="editTirAnio" /><br/>
+    <label>Período:</label> <input type="number" id="editTirPeriodo" /><br/>
+    <label>Forma:</label> <input type="number" id="editTirForma" /><br/>
+    <label>Concepto:</label> <select id="editTirConcepto" style="width:250px;"></select><br/>
+    <label>Monto:</label> <input type="number" id="editTirMonto" step="0.01" /><br/>
+    <label>Estatus:</label> <input type="number" id="editTirEstatus" /><br/>
+    <div class="btn-row">
+        <button id="btnTirCancelar" class="btn-danger">Cancelar</button>
+        <button id="btnTirGuardar" class="btn-primary">💾 Guardar</button>
+    </div>
+</div></div>
+
+<div id="modalDev" class="modal-overlay"><div class="modal-box">
+    <h3>✏️ Editar Devengado</h3>
+    <label>ID:</label> <span id="editDevId" style="color:#58a6ff;"></span><br/>
+    <label>Año:</label> <input type="number" id="editDevAnio" /><br/>
+    <label>Período:</label> <input type="number" id="editDevPeriodo" /><br/>
+    <label>Concepto:</label> <input type="text" id="editDevConcepto" style="width:250px;" /><br/>
+    <label>Clasif:</label> <select id="editDevClasif" style="width:250px;"></select><br/>
+    <label>F.Pago:</label> <select id="editDevFormaPago" style="width:250px;"></select><br/>
+    <label>Monto:</label> <input type="number" id="editDevMonto" step="0.01" /><br/>
+    <label>Estatus:</label> <input type="number" id="editDevEstatus" /><br/>
+    <div class="btn-row">
+        <button id="btnDevCancelar" class="btn-danger">Cancelar</button>
+        <button id="btnDevGuardar" class="btn-primary">💾 Guardar</button>
+    </div>
+</div></div>
+
+<div id="toast"></div>
+
+<script>
+// ---- API helper: reemplaza invoke() por fetch() ----
+const API = '/api';
+
+async function api(method, path, body) {
+    const opts = { method, headers: {} };
+    if (body) {
+        opts.headers['Content-Type'] = 'application/json';
+        opts.body = JSON.stringify(body);
+    }
+    const res = await fetch(API + path, opts);
+    if (!res.ok) {
+        const errText = await res.text().catch(() => 'Error de red');
+        throw new Error(errText || `HTTP ${res.status}`);
+    }
+    if (res.status === 204 || res.headers.get('content-length') === '0') return null;
+    return res.json();
+}
+
+function apiGET(path) { return api('GET', path); }
+function apiPOST(path, body) { return api('POST', path, body); }
+
+// ---- Toast ----
+function toast(msg, type='success') {
+    const t=document.getElementById('toast');
+    t.textContent=msg; t.className=type; t.style.display='block';
+    setTimeout(()=>{t.style.display='none';},3000);
+}
+
+// ---- Tabs ----
+document.querySelectorAll('.tab-btn').forEach(b => b.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach(x => x.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(x => x.classList.remove('active'));
+    b.classList.add('active');
+    document.getElementById(b.dataset.tab).classList.add('active');
+    if(b.dataset.tab==='tabDashboard') cargarDashboard();
+}));
+
+// ---- Helpers ----
+function showMsg(el,m,c) { if(el) { el.textContent=m; el.className=c||''; } }
+function showLoading(el,m) { showMsg(el,m,'loading'); }
+function showError(el,e) { const msg='Error: '+(e.message||e); showMsg(el,msg,'error'); toast(msg,'error'); }
+function showSuccess(el,m) { showMsg(el,m,'success'); toast(m,'success'); }
+
+const outTir=document.getElementById('output'), outDev=document.getElementById('outputDev'), outDif=document.getElementById('outputDif');
+const gc=document.getElementById('graficoContainer'), bmt=document.getElementById('btnMostrarTabla');
+function mostrarTabla() { gc.style.display='none'; outDif.style.display='block'; bmt.style.display='none'; }
+function mostrarGrafico() { outDif.style.display='none'; gc.style.display='block'; bmt.style.display='inline-flex'; }
+bmt.addEventListener('click',mostrarTabla);
+
+function llenarSelect(id, datos, valueKey, textKey) {
+    const s=document.getElementById(id); if(!s) return;
+    s.innerHTML='<option value="">Seleccionar...</option>';
+    datos.forEach(d=>{
+        const o=document.createElement('option');
+        o.value=d[valueKey];
+        o.textContent=typeof textKey==='function' ? textKey(d) : d[textKey];
+        s.appendChild(o);
+    });
+}
+
+function formatMoney(n) {
+    if (n === null || n === undefined) return 'NULL';
+    return '$' + n.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+}
+
+function formatTirillas(d) {
+    if(!d||!d.length) return '<div style="padding:20px;text-align:center;color:#8b949e;">📭 No hay datos.</div>';
+    let total=0;
+    for(const r of d) if(r.monto_total!==null) total+=r.monto_total;
+    let h='<table><thead><tr><th>ID</th><th>Año</th><th>Per</th><th>Fa</th><th>Concepto</th><th>Monto</th><th>Est</th><th></th></tr></thead><tbody>';
+    for(const r of d) {
+        const color = r.monto_total !== null ? (r.monto_total >= 0 ? '#3fb950' : '#f85149') : '#8b949e';
+        h+=`<tr><td>${r.tir_id}</td><td>${r.anio}</td><td>${r.periodo}</td><td>${r.forma_id}</td><td>${r.concepto||r.concepto_id}</td><td style="text-align:right;font-weight:600;color:${color}">${formatMoney(r.monto_total)}</td><td>${r.estatus_id}</td><td><button class="edit-btn" data-tab="tir" data-id="${r.tir_id}" data-a="${r.anio}" data-p="${r.periodo}" data-f="${r.forma_id}" data-c="${r.concepto_id}" data-m="${r.monto_abs}" data-e="${r.estatus_id}">✏️</button></td></tr>`;
+    }
+    const totalColor = total >= 0 ? '#3fb950' : '#f85149';
+    h+=`</tbody></table><div class="total-info">📦 ${d.length} registros &nbsp;|&nbsp; <strong style="color:${totalColor}">Total: ${formatMoney(total)}</strong></div>`; return h;
+}
+function formatDevengados(d) {
+    if(!d||!d.length) return '<div style="padding:20px;text-align:center;color:#8b949e;">📭 No hay datos.</div>';
+    let total=0;
+    for(const r of d) total+=r.monto;
+    let h='<table><thead><tr><th>ID</th><th>Año</th><th>Per</th><th>Concepto</th><th>Clasificación</th><th>F.Pago</th><th>Monto</th><th>Est</th><th></th></tr></thead><tbody>';
+    for(const r of d) h+=`<tr><td>${r.dev_id}</td><td>${r.anio}</td><td>${r.periodo}</td><td title="${r.concepto}">${r.concepto.length>25?r.concepto.slice(0,25)+'…':r.concepto}</td><td>${r.desc_clas}</td><td>${r.desc_fp}</td><td style="text-align:right;font-weight:600;">${r.monto.toFixed(2)}</td><td>${r.estatus_id}</td><td><button class="edit-btn" data-tab="dev" data-id="${r.dev_id}" data-a="${r.anio}" data-p="${r.periodo}" data-co="${r.concepto}" data-cl="${r.clasif_id}" data-fp="${r.forma_pago_id}" data-m="${r.monto}" data-e="${r.estatus_id}">✏️</button></td></tr>`;
+    h+=`</tbody></table><div class="total-info">📦 ${d.length} registros &nbsp;|&nbsp; <strong style="color:#f85149">Total: $${total.toFixed(2)}</strong></div>`; return h;
+}
+function formatDiferencia(d) {
+    if(!d||!d.length) return '<div style="padding:20px;text-align:center;color:#8b949e;">📭 No hay datos.</div>';
+    let h='<table><thead><tr><th>Año</th><th>Per</th><th>Disponible</th></tr></thead><tbody>';
+    let total=0;
+    for(const r of d) { const cls=r.diferencia<0?'style="color:#f85149;"':''; h+=`<tr><td>${r.anio}</td><td>${r.periodo}</td><td ${cls} style="text-align:right;font-weight:600;">${r.diferencia.toFixed(2)}</td></tr>`; total+=r.diferencia; }
+    const totalColor = total < 0 ? '#f85149' : '#3fb950';
+    h+=`<tr style="background:#1c2128;font-weight:700;"><td colspan="2">Total</td><td style="text-align:right;color:${totalColor}">${total.toFixed(2)}</td></tr>`;
+    h+='</tbody></table>'; return h;
+}
+
+// ===== DASHBOARD =====
+async function cargarDashboard() {
+    try{
+        const [tirillas, disponible, dev, deudas] = await Promise.all([
+            apiGET('/tirillas'),
+            apiGET('/disponible'),
+            apiGET('/devengados'),
+            apiGET('/deudas')
+        ]);
+        let ingresos=0, egresos=0;
+        tirillas.forEach(t=>{ if(t.monto_total!==null && t.monto_total>0) ingresos+=t.monto_total; else if(t.monto_total!==null) egresos+=Math.abs(t.monto_total); });
+        dev.forEach(d=>egresos+=d.monto);
+        const difTotal = disponible.reduce((s,r)=>s+r.diferencia,0);
+        document.getElementById('dashIngresos').textContent='$'+ingresos.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g,',');
+        document.getElementById('dashEgresos').textContent='$'+egresos.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g,',');
+        document.getElementById('dashDiferencia').textContent='$'+difTotal.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g,',');
+        document.getElementById('dashDiferencia').style.color=difTotal<0?'#f85149':'#3fb950';
+        document.getElementById('dashTirillas').textContent=tirillas.length;
+        document.getElementById('dashOutput').innerHTML=formatDiferencia(disponible);
+        if(!deudas||!deudas.length){
+            document.getElementById('dashDeudas').innerHTML='<span style="color:#3fb950;">✅ No hay deudas pendientes.</span>';
+        } else {
+            let total=0;
+            let h='<table><thead><tr><th>Concepto</th><th>Total</th></tr></thead><tbody>';
+            for(const r of deudas){ h+=`<tr><td>${r.concepto}</td><td style="text-align:right;font-weight:600;color:#f85149;">${formatMoney(r.total_monto)}</td></tr>`; total+=r.total_monto; }
+            h+=`<tr style="background:#1c2128;font-weight:700;"><td>Total Deudas</td><td style="text-align:right;color:#f85149;">${formatMoney(total)}</td></tr>`; h+='</tbody></table>';
+            document.getElementById('dashDeudas').innerHTML=h;
+        }
+    }catch(e){ document.getElementById('dashDeudas').textContent='Error: '+(e.message||e); document.getElementById('dashOutput').textContent='Error al cargar dashboard: '+(e.message||e); }
+}
+
+// ===== EXPORTAR CSV =====
+document.getElementById('btnExportCSV').addEventListener('click',()=>{
+    const active=document.querySelector('.tab-content.active');
+    if(!active) return;
+    const tab=active.id;
+    let data=[], filename='export.csv';
+    if(tab==='tabTirillas'||tab==='tabDashboard'){ 
+        const rows=document.querySelectorAll('#output table tr, #dashOutput table tr');
+        if(rows.length){ filename='tirillas.csv'; rows.forEach(r=>{const c=[];r.querySelectorAll('td,th').forEach((t,i)=>{if(i<5)c.push('"'+t.textContent.trim()+'"');}); if(c.length)data.push(c.join(','));}); }
+    }else if(tab==='tabDevengado'){
+        const rows=document.querySelectorAll('#outputDev table tr');
+        if(rows.length){ filename='devengados.csv'; rows.forEach(r=>{const c=[];r.querySelectorAll('td,th').forEach((t,i)=>{if(i<8)c.push('"'+t.textContent.trim()+'"');}); if(c.length)data.push(c.join(','));}); }
+    }else if(tab==='tabDisponible'){
+        const rows=document.querySelectorAll('#outputDif table tr');
+        if(rows.length){ filename='disponible.csv'; rows.forEach(r=>{const c=[];r.querySelectorAll('td,th').forEach(t=>c.push('"'+t.textContent.trim()+'"')); if(c.length)data.push(c.join(','));}); }
+    }
+    if(data.length){ const blob=new Blob([data.join('\n')],{type:'text/csv'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=filename; a.click(); toast('📥 CSV exportado: '+filename); }
+    else toast('No hay datos visibles para exportar.','info');
+});
+
+// ===== EDIT MODALS =====
+let editTirId=null, editDevId=null;
+
+document.getElementById('btnTirGuardar').addEventListener('click',async()=>{
+    const id=editTirId, a=parseInt(document.getElementById('editTirAnio').value), p=parseInt(document.getElementById('editTirPeriodo').value);
+    const f=parseInt(document.getElementById('editTirForma').value), c=parseInt(document.getElementById('editTirConcepto').value);
+    const m=parseFloat(document.getElementById('editTirMonto').value), e=parseInt(document.getElementById('editTirEstatus').value);
+    if(!a||!p||isNaN(f)||!c||isNaN(m)||isNaN(e)){toast('Campos obligatorios.','info');return;}
+    document.getElementById('modalTir').style.display='none';
+    try{
+        await apiPOST('/tirillas/actualizar', {tir_id:id, anio:a, periodo:p, forma_id:f, concepto_id:c, monto_abs:m, estatus_id:e});
+        toast('✅ Tirilla actualizada');
+        const fa=document.getElementById('filtroAnio').value, fp=document.getElementById('filtroPeriodo').value;
+        if(fa||fp) document.getElementById('btnFiltrar').click(); else document.getElementById('btnTodo').click();
+    }catch(e){showError(outTir,e);}
+});
+document.getElementById('btnTirCancelar').addEventListener('click',()=>document.getElementById('modalTir').style.display='none');
+
+document.getElementById('btnDevGuardar').addEventListener('click',async()=>{
+    const id=editDevId, a=parseInt(document.getElementById('editDevAnio').value), p=parseInt(document.getElementById('editDevPeriodo').value);
+    const co=document.getElementById('editDevConcepto').value.trim(), cl=parseInt(document.getElementById('editDevClasif').value);
+    const fp=parseInt(document.getElementById('editDevFormaPago').value), m=parseFloat(document.getElementById('editDevMonto').value), e=parseInt(document.getElementById('editDevEstatus').value);
+    if(!a||!p||!co||isNaN(cl)||isNaN(fp)||isNaN(m)||isNaN(e)){toast('Campos obligatorios.','info');return;}
+    document.getElementById('modalDev').style.display='none';
+    try{
+        await apiPOST('/devengados/actualizar', {dev_id:id, anio:a, periodo:p, concepto:co, clasif_id:cl, forma_pago_id:fp, monto:m, estatus_id:e});
+        toast('✅ Devengado actualizado');
+        const fa=document.getElementById('devFiltroAnio').value, fp2=document.getElementById('devFiltroPeriodo').value;
+        if(fa||fp2) document.getElementById('btnDevFiltrar').click(); else document.getElementById('btnDevTodos').click();
+    }catch(e){showError(outDev,e);}
+});
+document.getElementById('btnDevCancelar').addEventListener('click',()=>document.getElementById('modalDev').style.display='none');
+
+// ---- Botones editar global ----
+document.addEventListener('click',async(e)=>{
+    const btn=e.target.closest('.edit-btn'); if(!btn) return;
+    const tab=btn.dataset.tab;
+    if(tab==='tir'){
+        document.getElementById('editTirId').textContent=btn.dataset.id;
+        document.getElementById('editTirAnio').value=btn.dataset.a;
+        document.getElementById('editTirPeriodo').value=btn.dataset.p;
+        document.getElementById('editTirForma').value=btn.dataset.f;
+        document.getElementById('editTirMonto').value=btn.dataset.m;
+        document.getElementById('editTirEstatus').value=btn.dataset.e;
+        if(window._conceptos) llenarSelect('editTirConcepto',window._conceptos,'concept_id','concepto');
+        document.getElementById('editTirConcepto').value=btn.dataset.c;
+        editTirId=parseInt(btn.dataset.id); document.getElementById('modalTir').style.display='block';
+    }else if(tab==='dev'){
+        document.getElementById('editDevId').textContent=btn.dataset.id;
+        document.getElementById('editDevAnio').value=btn.dataset.a;
+        document.getElementById('editDevPeriodo').value=btn.dataset.p;
+        document.getElementById('editDevConcepto').value=btn.dataset.co;
+        if(window._formasPago) llenarSelect('editDevFormaPago',window._formasPago,'fp_id','desc_fp');
+        document.getElementById('editDevFormaPago').value=btn.dataset.fp;
+        document.getElementById('editDevMonto').value=btn.dataset.m;
+        document.getElementById('editDevEstatus').value=btn.dataset.e;
+        if(window._clasif) llenarSelect('editDevClasif',window._clasif,'clas_id','desc_clas');
+        document.getElementById('editDevClasif').value=btn.dataset.cl;
+        editDevId=parseInt(btn.dataset.id); document.getElementById('modalDev').style.display='block';
+    }
+});
+
+// ===== TIRILLAS =====
+document.getElementById('btnTodo').addEventListener('click',async()=>{
+    showLoading(outTir,'Cargando...');
+    document.getElementById('filtroAnio').value=''; document.getElementById('filtroPeriodo').value='';
+    try{outTir.innerHTML=formatTirillas(await apiGET('/tirillas'));outTir.className='';}catch(e){showError(outTir,e);}
+});
+document.getElementById('btnFiltrar').addEventListener('click',async()=>{
+    const a=document.getElementById('filtroAnio').value?parseInt(document.getElementById('filtroAnio').value):null;
+    const p=document.getElementById('filtroPeriodo').value?parseInt(document.getElementById('filtroPeriodo').value):null;
+    if(!a&&!p){toast('Especifica año o periodo.','info');return;}
+    showLoading(outTir,'Filtrando...');
+    try{outTir.innerHTML=formatTirillas(await apiGET(`/tirillas/filtradas?anio=${a||''}&periodo=${p||''}`));outTir.className='';}catch(e){showError(outTir,e);}
+});
+document.getElementById('btnInsertar').addEventListener('click',async()=>{
+    const a=parseInt(document.getElementById('insAnio').value), p=parseInt(document.getElementById('insPeriodo').value);
+    const f=parseInt(document.getElementById('insForma').value), c=parseInt(document.getElementById('insConcepto').value);
+    const m=parseFloat(document.getElementById('insMonto').value), e=parseInt(document.getElementById('insEstatus').value);
+    if(!a||!p||isNaN(f)||!c||isNaN(m)||isNaN(e)){toast('Campos obligatorios.','info');return;}
+    try{
+        await apiPOST('/tirillas', {anio:a, periodo:p, forma_id:f, concepto_id:c, monto_abs:m, estatus_id:e});
+        toast('✅ Tirilla insertada');showSuccess(outTir,'');
+        ['insAnio','insPeriodo','insForma','insConcepto','insMonto','insEstatus'].forEach(x=>document.getElementById(x).value='');
+    }catch(e){showError(outTir,e);}
+});
+document.getElementById('btnCalcularTotal').addEventListener('click',async()=>{
+    try{const f=await apiPOST('/tirillas/recalcular');toast('✅ Recalculado. Filas: '+f.filas);}catch(e){showError(outTir,e);}
+});
+document.getElementById('btnLimpiarTir').addEventListener('click',()=>{
+    document.getElementById('filtroAnio').value=''; document.getElementById('filtroPeriodo').value='';
+    outTir.innerHTML='<div style="padding:20px;text-align:center;color:#8b949e;">Presiona un botón para cargar datos...</div>';
+});
+
+// ===== DEVENGADO =====
+document.getElementById('btnDevTodos').addEventListener('click',async()=>{
+    showLoading(outDev,'Cargando...');
+    document.getElementById('devFiltroAnio').value=''; document.getElementById('devFiltroPeriodo').value=''; document.getElementById('devFiltroEstatus').value='';
+    try{outDev.innerHTML=formatDevengados(await apiGET('/devengados'));outDev.className='';}catch(e){showError(outDev,e);}
+});
+document.getElementById('btnDevFiltrar').addEventListener('click',async()=>{
+    const a=document.getElementById('devFiltroAnio').value?parseInt(document.getElementById('devFiltroAnio').value):null;
+    const p=document.getElementById('devFiltroPeriodo').value?parseInt(document.getElementById('devFiltroPeriodo').value):null;
+    const e=document.getElementById('devFiltroEstatus').value!==''?parseInt(document.getElementById('devFiltroEstatus').value):null;
+    if(!a&&!p&&e===null){toast('Especifica al menos un filtro.','info');return;}
+    showLoading(outDev,'Filtrando...');
+    try{outDev.innerHTML=formatDevengados(await apiGET(`/devengados?anio=${a||''}&periodo=${p||''}&estatus_id=${e!==null?e:''}`));outDev.className='';}catch(e){showError(outDev,e);}
+});
+document.getElementById('btnDevInsertar').addEventListener('click',async()=>{
+    const a=parseInt(document.getElementById('devInsAnio').value), p=parseInt(document.getElementById('devInsPeriodo').value);
+    const co=document.getElementById('devInsConcepto').value.trim(), cl=parseInt(document.getElementById('devInsClasif').value);
+    const fp=parseInt(document.getElementById('devInsFormaPago').value), m=parseFloat(document.getElementById('devInsMonto').value), e=parseInt(document.getElementById('devInsEstatus').value);
+    if(!a||!p||!co||isNaN(cl)||isNaN(fp)||isNaN(m)||isNaN(e)){toast('Campos obligatorios.','info');return;}
+    try{
+        await apiPOST('/devengados', {anio:a, periodo:p, concepto:co, clasif_id:cl, forma_pago_id:fp, monto:m, estatus_id:e});
+        toast('✅ Devengado insertado');showSuccess(outDev,'');
+        ['devInsAnio','devInsPeriodo','devInsConcepto','devInsClasif','devInsFormaPago','devInsMonto','devInsEstatus'].forEach(x=>document.getElementById(x).value='');
+    }catch(e){showError(outDev,e);}
+});
+document.getElementById('btnLimpiarDev').addEventListener('click',()=>{
+    document.getElementById('devFiltroAnio').value=''; document.getElementById('devFiltroPeriodo').value=''; document.getElementById('devFiltroEstatus').value='';
+    outDev.innerHTML='<div style="padding:20px;text-align:center;color:#8b949e;">Presiona un botón para cargar datos...</div>';
+});
+
+// ===== DISPONIBLE =====
+let dispAnioActual = null;
+
+async function cargarDisponible(anio) {
+    mostrarTabla(); showLoading(outDif,'Calculando...');
+    try{
+        const data = await apiGET(`/disponible?anio=${anio||''}`);
+        outDif.innerHTML=formatDiferencia(data);outDif.className='';
+    }catch(e){showError(outDif,e);}
+}
+
+document.getElementById('btnDispFiltrar').addEventListener('click',async()=>{
+    const a=document.getElementById('dispFiltroAnio').value?parseInt(document.getElementById('dispFiltroAnio').value):null;
+    if(!a){toast('Ingresa un año.','info');return;}
+    dispAnioActual = a;
+    cargarDisponible(a);
+});
+document.getElementById('btnDispTodos').addEventListener('click',async()=>{
+    document.getElementById('dispFiltroAnio').value='';
+    dispAnioActual = null;
+    cargarDisponible(null);
+});
+
+document.getElementById('btnGrafico').addEventListener('click',async()=>{
+    try{
+        const data=await apiGET(`/disponible?anio=${dispAnioActual||''}`);
+        if(!data||!data.length){toast('No hay datos para graficar.','info');return;}
+        const labels=data.map(r=>r.anio+'-'+r.periodo), values=data.map(r=>r.diferencia);
+        mostrarGrafico(); if(window.miChart) window.miChart.destroy();
+        window.miChart=new Chart(document.getElementById('miGrafico').getContext('2d'),{
+            type:'bar',
+            data:{labels,datasets:[{label:'Disponible',data:values,backgroundColor:values.map(v=>v<0?'rgba(248,81,73,0.6)':'rgba(63,185,80,0.6)'),borderColor:values.map(v=>v<0?'#f85149':'#3fb950'),borderWidth:1}]},
+            options:{responsive:true,plugins:{legend:{labels:{color:'#c9d1d9'}}},scales:{x:{ticks:{color:'#8b949e'},grid:{color:'#21262d'}},y:{beginAtZero:true,ticks:{color:'#8b949e'},grid:{color:'#21262d'}}}}
+        });
+    }catch(e){showError(outDif,e);}
+});
+document.getElementById('btnLimpiarDif').addEventListener('click',()=>{mostrarTabla();outDif.innerHTML='<div style="padding:20px;text-align:center;color:#8b949e;">Presiona un botón...</div>';});
+
+// ===== CARGAR CATÁLOGOS =====
+async function cargarCatalogos() {
+    try{const cs=await apiGET('/conceptos'); window._conceptos=cs; llenarSelect('insConcepto',cs,'concept_id',c=>c.concepto+' ('+c.acr_concepto+')');}catch(e){console.error(e);}
+    try{const cl=await apiGET('/clasif-egresos'); window._clasif=cl; llenarSelect('devInsClasif',cl,'clas_id','desc_clas');}catch(e){console.error(e);}
+    try{const fp=await apiGET('/formas-pago'); window._formasPago=fp; llenarSelect('devInsFormaPago',fp,'fp_id','desc_fp');}catch(e){console.error(e);}
+}
+document.addEventListener('DOMContentLoaded',()=>{cargarCatalogos();cargarDashboard();});
+</script>
+</body>
+</html>
