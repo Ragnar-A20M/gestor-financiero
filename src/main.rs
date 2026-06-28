@@ -15,6 +15,7 @@ use sha2::{Digest, Sha256};
 use sqlx::PgPool;
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Instant;
 use tokio::sync::Mutex;
 use tower_http::cors::CorsLayer;
 use uuid::Uuid;
@@ -28,6 +29,7 @@ use db::{
 struct AppState {
     db: PgPool,
     sesiones: Arc<Mutex<HashMap<String, String>>>,
+    rate_limiter: RateLimitStore,
     admin_username: String,
     admin_password_hash: String,
 }
@@ -82,6 +84,66 @@ async fn verificar_auth(
             Json(MsgError { error: "Token inválido".into() }),
         ))
     }
+}
+
+// =============================================================================
+// Rate Limiter para login
+// =============================================================================
+
+/// Entrada del rate limiter: (intentos, ventana_inicia_en)
+type RateLimitStore = Arc<Mutex<HashMap<String, (u32, Instant)>>>;
+
+/// Límites: 5 intentos por minuto por IP
+const MAX_LOGIN_ATTEMPTS: u32 = 5;
+const RATE_LIMIT_WINDOW_SECS: u64 = 60;
+
+/// Verifica si la IP puede intentar login. Retorna Ok o 429.
+fn check_rate_limit(
+    store: &RateLimitStore,
+    ip: &str,
+) -> Result<(), (StatusCode, Json<MsgError>)> {
+    let mut map = store.blocking_lock();
+    let now = Instant::now();
+    
+    if let Some((count, window_start)) = map.get(ip) {
+        let elapsed = now.duration_since(*window_start).as_secs();
+        if elapsed < RATE_LIMIT_WINDOW_SECS {
+            // Dentro de la ventana de tiempo
+            if *count >= MAX_LOGIN_ATTEMPTS {
+                return Err((
+                    StatusCode::TOO_MANY_REQUESTS,
+                    Json(MsgError { error: format!("Demasiados intentos. Espera {} segundos.", RATE_LIMIT_WINDOW_SECS - elapsed) }),
+                ));
+            }
+        } else {
+            // Ventana expirada, reiniciar
+            map.insert(ip.to_string(), (1, now));
+            return Ok(());
+        }
+    }
+    
+    // Incrementar contador
+    let entry = map.entry(ip.to_string()).or_insert((0, now));
+    entry.0 += 1;
+    if entry.0 == 1 {
+        entry.1 = now; // primera vez en esta ventana
+    }
+    Ok(())
+}
+
+/// Extrae la IP del cliente desde los headers
+fn extraer_ip(headers: &HeaderMap) -> String {
+    headers
+        .get("x-forwarded-for")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.split(',').next())
+        .map(|s| s.trim().to_string())
+        .or_else(|| {
+            headers
+                .get("x-real-ip")
+                .and_then(|v| v.to_str().ok().map(|s| s.to_string()))
+        })
+        .unwrap_or_else(|| "unknown".to_string())
 }
 
 // =============================================================================
@@ -165,8 +227,13 @@ struct DevengadosFiltro {
 
 async fn api_login(
     State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
     Json(body): Json<LoginBody>,
 ) -> Result<Json<LoginResponse>, (StatusCode, Json<MsgError>)> {
+    // Rate limiting
+    let ip = extraer_ip(&headers);
+    check_rate_limit(&state.rate_limiter, &ip)?;
+    
     if body.username != state.admin_username {
         return Err((StatusCode::UNAUTHORIZED, Json(MsgError { error: "Credenciales inválidas".into() })));
     }
@@ -379,11 +446,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let pool = PgPool::connect(&database_url).await?;
 
     let sesiones: Arc<Mutex<HashMap<String, String>>> = Arc::new(Mutex::new(HashMap::new()));
+    let rate_limiter: RateLimitStore = Arc::new(Mutex::new(HashMap::new()));
     let admin_username = std::env::var("ADMIN_USERNAME").unwrap_or_else(|_| "admin".to_string());
     let admin_password = std::env::var("ADMIN_PASSWORD").expect("ADMIN_PASSWORD must be set");
     let admin_password_hash = hex::encode(Sha256::digest(admin_password.as_bytes()));
 
-    let state = Arc::new(AppState { db: pool, sesiones, admin_username, admin_password_hash });
+    let state = Arc::new(AppState { db: pool, sesiones, rate_limiter, admin_username, admin_password_hash });
 
     let cors = CorsLayer::permissive();
 
