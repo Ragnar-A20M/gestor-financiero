@@ -98,11 +98,11 @@ const MAX_LOGIN_ATTEMPTS: u32 = 5;
 const RATE_LIMIT_WINDOW_SECS: u64 = 60;
 
 /// Verifica si la IP puede intentar login. Retorna Ok o 429.
-fn check_rate_limit(
+async fn check_rate_limit(
     store: &RateLimitStore,
     ip: &str,
 ) -> Result<(), (StatusCode, Json<MsgError>)> {
-    let mut map = store.blocking_lock();
+    let mut map = store.lock().await;
     let now = Instant::now();
     
     if let Some((count, window_start)) = map.get(ip) {
@@ -203,21 +203,41 @@ struct FilasAfectadas {
 // Query params para filtros GET
 // =============================================================================
 
+/// Deserializa un `Option<T>` tratando los strings vacíos como `None`.
+/// Útil para query params donde el frontend envía valores vacíos.
+fn deserialize_opt_i16<'de, D: serde::Deserializer<'de>>(
+    d: D,
+) -> Result<Option<i16>, D::Error> {
+    use serde::de::Error;
+    let s = Option::<String>::deserialize(d)?;
+    match s {
+        Some(s) if s.trim().is_empty() => Ok(None),
+        Some(s) => s.parse::<i16>().map(Some).map_err(D::Error::custom),
+        None => Ok(None),
+    }
+}
+
 #[derive(Deserialize)]
 struct TirillasFiltro {
+    #[serde(default, deserialize_with = "deserialize_opt_i16")]
     anio: Option<i16>,
+    #[serde(default, deserialize_with = "deserialize_opt_i16")]
     periodo: Option<i16>,
 }
 
 #[derive(Deserialize)]
 struct AnioFiltro {
+    #[serde(default, deserialize_with = "deserialize_opt_i16")]
     anio: Option<i16>,
 }
 
 #[derive(Deserialize)]
 struct DevengadosFiltro {
+    #[serde(default, deserialize_with = "deserialize_opt_i16")]
     anio: Option<i16>,
+    #[serde(default, deserialize_with = "deserialize_opt_i16")]
     periodo: Option<i16>,
+    #[serde(default, deserialize_with = "deserialize_opt_i16")]
     estatus_id: Option<i16>,
 }
 
@@ -232,7 +252,7 @@ async fn api_login(
 ) -> Result<Json<LoginResponse>, (StatusCode, Json<MsgError>)> {
     // Rate limiting
     let ip = extraer_ip(&headers);
-    check_rate_limit(&state.rate_limiter, &ip)?;
+    check_rate_limit(&state.rate_limiter, &ip).await?;
     
     if body.username != state.admin_username {
         return Err((StatusCode::UNAUTHORIZED, Json(MsgError { error: "Credenciales inválidas".into() })));

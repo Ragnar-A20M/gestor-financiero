@@ -639,7 +639,16 @@ document.getElementById('btnLogin').addEventListener('click', async () => {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ username, password })
         });
-        if (!res.ok) { errEl.style.display = 'block'; return; }
+        if (!res.ok) {
+            try {
+                const errData = await res.json();
+                errEl.textContent = errData.error || 'Error desconocido';
+            } catch {
+                errEl.textContent = `Error ${res.status}: ${res.statusText}`;
+            }
+            errEl.style.display = 'block';
+            return;
+        }
         const data = await res.json();
         localStorage.setItem('auth_token', data.token);
         document.getElementById('loginOverlay').classList.add('hidden');
