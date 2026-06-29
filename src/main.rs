@@ -161,6 +161,17 @@ struct InsertTirillaBody {
 }
 
 #[derive(Deserialize)]
+struct InsertTirillaMultiBody {
+    anio: i16,
+    periodo_inicio: i16,
+    periodo_fin: i16,
+    forma_id: i16,
+    concepto_id: i32,
+    monto_abs: f64,
+    estatus_id: i16,
+}
+
+#[derive(Deserialize)]
 struct UpdateTirillaBody {
     tir_id: i32,
     anio: i16,
@@ -175,6 +186,18 @@ struct UpdateTirillaBody {
 struct InsertDevengadoBody {
     anio: i16,
     periodo: i16,
+    concepto: String,
+    clasif_id: i16,
+    forma_pago_id: i16,
+    monto: f64,
+    estatus_id: i16,
+}
+
+#[derive(Deserialize)]
+struct InsertDevengadoMultiBody {
+    anio: i16,
+    periodo_inicio: i16,
+    periodo_fin: i16,
     concepto: String,
     clasif_id: i16,
     forma_pago_id: i16,
@@ -344,6 +367,28 @@ async fn api_recalcular_total(
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
 }
 
+async fn api_insert_tirilla_multi(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Json(body): Json<InsertTirillaMultiBody>,
+) -> Result<Json<FilasAfectadas>, (StatusCode, String)> {
+    verificar_auth(&headers, &state.sesiones).await
+        .map_err(|(s, _)| (s, "No autorizado".into()))?;
+    db::insert_tirilla_multi(
+        &state.db,
+        body.anio,
+        body.periodo_inicio,
+        body.periodo_fin,
+        body.forma_id,
+        body.concepto_id,
+        body.monto_abs,
+        body.estatus_id,
+    )
+    .await
+    .map(|f| Json(FilasAfectadas { filas: f }))
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
+}
+
 // =============================================================================
 // Handlers: DISPONIBLE
 // =============================================================================
@@ -411,6 +456,26 @@ async fn api_update_devengado(
     )
     .await
     .map(|_| StatusCode::OK)
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
+}
+
+async fn api_insert_devengado_multi(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<InsertDevengadoMultiBody>,
+) -> Result<Json<FilasAfectadas>, (StatusCode, String)> {
+    db::insert_devengado_multi(
+        &state.db,
+        body.anio,
+        body.periodo_inicio,
+        body.periodo_fin,
+        &body.concepto,
+        body.clasif_id,
+        body.forma_pago_id,
+        body.monto,
+        body.estatus_id,
+    )
+    .await
+    .map(|f| Json(FilasAfectadas { filas: f }))
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
 }
 
@@ -485,11 +550,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/api/tirillas/filtradas", get(api_get_tirillas_filtradas))
         .route("/api/tirillas/actualizar", post(api_update_tirilla))
         .route("/api/tirillas/recalcular", post(api_recalcular_total))
+        .route("/api/tirillas/insertar-multi", post(api_insert_tirilla_multi))
         // Disponible
         .route("/api/disponible", get(api_get_disponible))
         // Devengados
         .route("/api/devengados", get(api_get_devengados).post(api_insert_devengado))
         .route("/api/devengados/actualizar", post(api_update_devengado))
+        .route("/api/devengados/insertar-multi", post(api_insert_devengado_multi))
         // Catálogos
         .route("/api/conceptos", get(api_get_conceptos))
         .route("/api/formas-pago", get(api_get_formas_pago))
@@ -510,6 +577,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("   GET      /api/disponible?anio=");
     println!("   GET|POST /api/devengados");
     println!("   POST     /api/devengados/actualizar");
+    println!("   POST     /api/tirillas/insertar-multi");
+    println!("   POST     /api/devengados/insertar-multi");
     println!("   GET      /api/conceptos");
     println!("   GET      /api/formas-pago");
     println!("   GET      /api/clasif-egresos");

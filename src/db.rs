@@ -261,6 +261,36 @@ pub async fn insert_tirilla(
     Ok(())
 }
 
+/// Inserta una tirilla en múltiples periodos consecutivos.
+///
+/// Usa `generate_series` para insertar un registro con los mismos datos
+/// en cada periodo desde `periodo_inicio` hasta `periodo_fin`.
+pub async fn insert_tirilla_multi(
+    pool: &PgPool,
+    anio: i16,
+    periodo_inicio: i16,
+    periodo_fin: i16,
+    forma_id: i16,
+    concepto_id: i32,
+    monto_abs: f64,
+    estatus_id: i16,
+) -> Result<u64, sqlx::Error> {
+    let result = sqlx::query(
+        "INSERT INTO ingresos.tirillas (anio, periodo, forma_id, concepto_id, monto_abs, estatus_id) \
+         SELECT $1, generate_series($2::int, $3::int)::smallint, $4, $5, $6, $7"
+    )
+    .bind(anio)
+    .bind(periodo_inicio)
+    .bind(periodo_fin)
+    .bind(forma_id)
+    .bind(concepto_id)
+    .bind(monto_abs)
+    .bind(estatus_id)
+    .execute(pool)
+    .await?;
+    Ok(result.rows_affected())
+}
+
 /// Recalcula `monto_total` según el tipo de concepto (positivo para tipo 1,3; negativo para los demás).
 pub async fn recalcular_monto_total(pool: &PgPool) -> Result<u64, sqlx::Error> {
     let result = sqlx::query(
@@ -382,6 +412,38 @@ pub async fn insert_devengado(
     .execute(pool)
     .await?;
     Ok(())
+}
+
+/// Inserta un devengado en múltiples periodos consecutivos.
+///
+/// Usa `generate_series` para insertar un registro con los mismos datos
+/// en cada periodo desde `periodo_inicio` hasta `periodo_fin`.
+pub async fn insert_devengado_multi(
+    pool: &PgPool,
+    anio: i16,
+    periodo_inicio: i16,
+    periodo_fin: i16,
+    concepto: &str,
+    clasif_id: i16,
+    forma_pago_id: i16,
+    monto: f64,
+    estatus_id: i16,
+) -> Result<u64, sqlx::Error> {
+    let result = sqlx::query(
+        "INSERT INTO egresos.devengado (anio, periodo, concepto, clasif_id, forma_pago_id, monto, estatus_id) \
+         SELECT $1, generate_series($2::int, $3::int)::smallint, $4, $5, $6, $7, $8"
+    )
+    .bind(anio)
+    .bind(periodo_inicio)
+    .bind(periodo_fin)
+    .bind(concepto)
+    .bind(clasif_id)
+    .bind(forma_pago_id)
+    .bind(monto)
+    .bind(estatus_id)
+    .execute(pool)
+    .await?;
+    Ok(result.rows_affected())
 }
 
 // =============================================================================

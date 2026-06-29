@@ -204,6 +204,19 @@
             <button id="btnInsertar" class="btn-primary btn-xs">💾 Insertar</button>
             <button id="btnCalcularTotal" class="btn-chart btn-xs">🧮 Calcular Total</button>
         </div>
+        <div style="margin-top:10px;padding-top:10px;border-top:1px solid #21262d;">
+            <label style="color:#8b949e;font-size:13px;cursor:pointer;">
+                <input type="checkbox" id="chkTirMulti" style="margin-right:6px;accent-color:#58a6ff;">
+                📦 Insertar en varios periodos (rango)
+            </label>
+            <div id="tirMultiFields" style="display:none;margin-top:8px;" class="insert-form">
+                <label style="color:#8b949e;font-size:12px;">Desde:</label>
+                <input type="number" id="insTirPeriodoInicio" placeholder="Periodo inicio" style="width:120px;" />
+                <label style="color:#8b949e;font-size:12px;">Hasta:</label>
+                <input type="number" id="insTirPeriodoFin" placeholder="Periodo fin" style="width:120px;" />
+                <button id="btnInsertarTirMulti" class="btn-dev btn-xs">📦 Insertar múltiple</button>
+            </div>
+        </div>
     </div>
     <div id="output" class="table-wrap"></div>
 </div>
@@ -231,6 +244,19 @@
             <input type="number" id="devInsMonto" step="0.01" placeholder="Monto" />
             <input type="number" id="devInsEstatus" placeholder="Estatus" />
             <button id="btnDevInsertar" class="btn-primary btn-xs">💾 Insertar</button>
+        </div>
+        <div style="margin-top:10px;padding-top:10px;border-top:1px solid #21262d;">
+            <label style="color:#8b949e;font-size:13px;cursor:pointer;">
+                <input type="checkbox" id="chkDevMulti" style="margin-right:6px;accent-color:#58a6ff;">
+                📦 Insertar en varios periodos (rango)
+            </label>
+            <div id="devMultiFields" style="display:none;margin-top:8px;" class="insert-form">
+                <label style="color:#8b949e;font-size:12px;">Desde:</label>
+                <input type="number" id="insDevPeriodoInicio" placeholder="Periodo inicio" style="width:120px;" />
+                <label style="color:#8b949e;font-size:12px;">Hasta:</label>
+                <input type="number" id="insDevPeriodoFin" placeholder="Periodo fin" style="width:120px;" />
+                <button id="btnInsertarDevMulti" class="btn-dev btn-xs">📦 Insertar múltiple</button>
+            </div>
         </div>
     </div>
     <div id="outputDev" class="table-wrap"></div>
@@ -511,6 +537,16 @@ document.addEventListener('click',async(e)=>{
     }
 });
 
+// ---- Checkbox multi-periodo TIRILLAS ----
+document.getElementById('chkTirMulti').addEventListener('change', function() {
+    document.getElementById('tirMultiFields').style.display = this.checked ? 'flex' : 'none';
+});
+
+// ---- Checkbox multi-periodo DEVENGADO ----
+document.getElementById('chkDevMulti').addEventListener('change', function() {
+    document.getElementById('devMultiFields').style.display = this.checked ? 'flex' : 'none';
+});
+
 // ===== TIRILLAS =====
 document.getElementById('btnTodo').addEventListener('click',async()=>{
     showLoading(outTir,'Cargando...');
@@ -533,6 +569,23 @@ document.getElementById('btnInsertar').addEventListener('click',async()=>{
         await apiPOST('/tirillas', {anio:a, periodo:p, forma_id:f, concepto_id:c, monto_abs:m, estatus_id:e});
         toast('✅ Tirilla insertada');showSuccess(outTir,'');
         ['insAnio','insPeriodo','insForma','insConcepto','insMonto','insEstatus'].forEach(x=>document.getElementById(x).value='');
+    }catch(e){showError(outTir,e);}
+});
+
+// ---- Insertar Tirilla MULTIPLE periodos ----
+document.getElementById('btnInsertarTirMulti').addEventListener('click',async()=>{
+    const a=parseInt(document.getElementById('insAnio').value);
+    const pi=parseInt(document.getElementById('insTirPeriodoInicio').value);
+    const pf=parseInt(document.getElementById('insTirPeriodoFin').value);
+    const f=parseInt(document.getElementById('insForma').value), c=parseInt(document.getElementById('insConcepto').value);
+    const m=parseFloat(document.getElementById('insMonto').value), e=parseInt(document.getElementById('insEstatus').value);
+    if(!a||isNaN(pi)||isNaN(pf)||pi>pf||isNaN(f)||!c||isNaN(m)||isNaN(e)){toast('Verifica campos. Periodo inicio debe ser <= Periodo fin.','info');return;}
+    try{
+        const res=await apiPOST('/tirillas/insertar-multi', {anio:a, periodo_inicio:pi, periodo_fin:pf, forma_id:f, concepto_id:c, monto_abs:m, estatus_id:e});
+        toast('✅ Insertadas '+res.filas+' tirillas');
+        ['insAnio','insPeriodo','insForma','insConcepto','insMonto','insEstatus','insTirPeriodoInicio','insTirPeriodoFin'].forEach(x=>document.getElementById(x).value='');
+        document.getElementById('chkTirMulti').checked=false;
+        document.getElementById('tirMultiFields').style.display='none';
     }catch(e){showError(outTir,e);}
 });
 document.getElementById('btnCalcularTotal').addEventListener('click',async()=>{
@@ -566,6 +619,23 @@ document.getElementById('btnDevInsertar').addEventListener('click',async()=>{
         await apiPOST('/devengados', {anio:a, periodo:p, concepto:co, clasif_id:cl, forma_pago_id:fp, monto:m, estatus_id:e});
         toast('✅ Devengado insertado');showSuccess(outDev,'');
         ['devInsAnio','devInsPeriodo','devInsConcepto','devInsClasif','devInsFormaPago','devInsMonto','devInsEstatus'].forEach(x=>document.getElementById(x).value='');
+    }catch(e){showError(outDev,e);}
+});
+
+// ---- Insertar Devengado MULTIPLE periodos ----
+document.getElementById('btnInsertarDevMulti').addEventListener('click',async()=>{
+    const a=parseInt(document.getElementById('devInsAnio').value);
+    const pi=parseInt(document.getElementById('insDevPeriodoInicio').value);
+    const pf=parseInt(document.getElementById('insDevPeriodoFin').value);
+    const co=document.getElementById('devInsConcepto').value.trim(), cl=parseInt(document.getElementById('devInsClasif').value);
+    const fp=parseInt(document.getElementById('devInsFormaPago').value), m=parseFloat(document.getElementById('devInsMonto').value), e=parseInt(document.getElementById('devInsEstatus').value);
+    if(!a||isNaN(pi)||isNaN(pf)||pi>pf||!co||isNaN(cl)||isNaN(fp)||isNaN(m)||isNaN(e)){toast('Verifica campos. Periodo inicio debe ser <= Periodo fin.','info');return;}
+    try{
+        const res=await apiPOST('/devengados/insertar-multi', {anio:a, periodo_inicio:pi, periodo_fin:pf, concepto:co, clasif_id:cl, forma_pago_id:fp, monto:m, estatus_id:e});
+        toast('✅ Insertados '+res.filas+' devengados');
+        ['devInsAnio','devInsPeriodo','devInsConcepto','devInsClasif','devInsFormaPago','devInsMonto','devInsEstatus','insDevPeriodoInicio','insDevPeriodoFin'].forEach(x=>document.getElementById(x).value='');
+        document.getElementById('chkDevMulti').checked=false;
+        document.getElementById('devMultiFields').style.display='none';
     }catch(e){showError(outDev,e);}
 });
 document.getElementById('btnLimpiarDev').addEventListener('click',()=>{
