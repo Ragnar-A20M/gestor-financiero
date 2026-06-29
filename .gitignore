@@ -3,3 +3,6 @@ target/
 sql/
 *.sql
 *.py
+
+.vscode/
+connect-db.sh
