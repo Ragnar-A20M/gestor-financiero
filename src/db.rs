@@ -43,6 +43,7 @@ pub struct Tirilla {
     pub concepto: String,
     pub monto_abs: f64,
     pub estatus_id: i16,
+    pub estatus: String,
     pub monto_total: Option<f64>,
 }
 
@@ -59,6 +60,7 @@ pub struct Devengado {
     pub desc_fp: String,
     pub monto: f64,
     pub estatus_id: i16,
+    pub estatus: String,
 }
 
 /// Resultado del cálculo de diferencia entre ingresos y egresos por período.
@@ -107,9 +109,12 @@ pub struct ClasifEgreso {
 pub async fn get_tirillas(pool: &PgPool) -> Result<Vec<Tirilla>, sqlx::Error> {
     let rows = sqlx::query_as::<_, Tirilla>(
         "SELECT tir.tir_id, tir.anio, tir.periodo, tir.forma_id, tir.concepto_id, \
-                c.concepto, tir.monto_abs::float8, tir.estatus_id, tir.monto_total::float8 \
+                c.concepto, tir.monto_abs::float8, tir.estatus_id, \
+                COALESCE(e.estatus, '') AS estatus, \
+                tir.monto_total::float8 \
          FROM ingresos.tirillas tir \
          JOIN catalogos.conceptos c ON tir.concepto_id = c.concept_id \
+         LEFT JOIN segmentos.estatus e ON tir.estatus_id = e.est_id \
          ORDER BY c.tipo_id IN (1,3) DESC, tir.anio DESC, tir.periodo DESC"
     )
         .fetch_all(pool)
@@ -129,9 +134,12 @@ pub async fn get_tirillas_filtradas(
 
     let mut builder = QueryBuilder::new(
         "SELECT tir.tir_id, tir.anio, tir.periodo, tir.forma_id, tir.concepto_id, \
-                c.concepto, tir.monto_abs::float8, tir.estatus_id, tir.monto_total::float8 \
+                c.concepto, tir.monto_abs::float8, tir.estatus_id, \
+                COALESCE(e.estatus, '') AS estatus, \
+                tir.monto_total::float8 \
          FROM ingresos.tirillas tir \
          JOIN catalogos.conceptos c ON tir.concepto_id = c.concept_id \
+         LEFT JOIN segmentos.estatus e ON tir.estatus_id = e.est_id \
          WHERE 1=1"
     );
 
@@ -346,10 +354,12 @@ pub async fn get_devengados(
         "SELECT d.dev_id, d.anio, d.periodo, d.concepto, \
                 d.clasif_id, ce.desc_clas, \
                 d.forma_pago_id, fp.desc_fp, \
-                d.monto::float8, d.estatus_id \
+                d.monto::float8, d.estatus_id, \
+                COALESCE(e.estatus, '') AS estatus \
          FROM egresos.devengado d \
          JOIN catalogos.clasif_egreso ce ON d.clasif_id = ce.clas_id \
          JOIN segmento.forma_pago fp ON d.forma_pago_id = fp.fp_id \
+         LEFT JOIN segmentos.estatus e ON d.estatus_id = e.est_id \
          WHERE 1=1"
     );
 

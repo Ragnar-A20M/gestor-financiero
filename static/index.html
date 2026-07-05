@@ -398,14 +398,21 @@ function formatMoney(n) {
     return '$' + n.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
 }
 
+function badgeEstatus(estatus) {
+    const s = (estatus || '').toLowerCase();
+    if (s === 'real') return '<span style="color:#3fb950;font-weight:600;">REAL</span>';
+    if (s === 'proyección' || s === 'proyeccion') return '<span style="color:#d2a8ff;font-weight:600;">PROYECCIÓN</span>';
+    return estatus || '-';
+}
+
 function formatTirillas(d) {
     if(!d||!d.length) return '<div style="padding:20px;text-align:center;color:#8b949e;">📭 No hay datos.</div>';
     let total=0;
     for(const r of d) if(r.monto_total!==null) total+=r.monto_total;
-    let h='<table><thead><tr><th>ID</th><th>Año</th><th>Per</th><th>Fa</th><th>Concepto</th><th>Monto</th><th>Est</th><th></th></tr></thead><tbody>';
+    let h='<table><thead><tr><th>ID</th><th>Año</th><th>Per</th><th>Fa</th><th>Concepto</th><th>Monto</th><th>Estatus</th><th></th></tr></thead><tbody>';
     for(const r of d) {
         const color = r.monto_total !== null ? (r.monto_total >= 0 ? '#3fb950' : '#f85149') : '#8b949e';
-        h+=`<tr><td>${r.tir_id}</td><td>${r.anio}</td><td>${r.periodo}</td><td>${r.forma_id}</td><td>${r.concepto||r.concepto_id}</td><td style="text-align:right;font-weight:600;color:${color}">${formatMoney(r.monto_total)}</td><td>${r.estatus_id}</td><td><button class="edit-btn" data-tab="tir" data-id="${r.tir_id}" data-a="${r.anio}" data-p="${r.periodo}" data-f="${r.forma_id}" data-c="${r.concepto_id}" data-m="${r.monto_abs}" data-e="${r.estatus_id}">✏️</button></td></tr>`;
+        h+=`<tr><td>${r.tir_id}</td><td>${r.anio}</td><td>${r.periodo}</td><td>${r.forma_id}</td><td>${r.concepto||r.concepto_id}</td><td style="text-align:right;font-weight:600;color:${color}">${formatMoney(r.monto_total)}</td><td>${badgeEstatus(r.estatus)}</td><td><button class="edit-btn" data-tab="tir" data-id="${r.tir_id}" data-a="${r.anio}" data-p="${r.periodo}" data-f="${r.forma_id}" data-c="${r.concepto_id}" data-m="${r.monto_abs}" data-e="${r.estatus_id}">✏️</button></td></tr>`;
     }
     const totalColor = total >= 0 ? '#3fb950' : '#f85149';
     h+=`</tbody></table><div class="total-info">📦 ${d.length} registros &nbsp;|&nbsp; <strong style="color:${totalColor}">Total: ${formatMoney(total)}</strong></div>`; return h;
@@ -414,8 +421,8 @@ function formatDevengados(d) {
     if(!d||!d.length) return '<div style="padding:20px;text-align:center;color:#8b949e;">📭 No hay datos.</div>';
     let total=0;
     for(const r of d) total+=r.monto;
-    let h='<table><thead><tr><th>ID</th><th>Año</th><th>Per</th><th>Concepto</th><th>Clasificación</th><th>F.Pago</th><th>Monto</th><th>Est</th><th></th></tr></thead><tbody>';
-    for(const r of d) h+=`<tr><td>${r.dev_id}</td><td>${r.anio}</td><td>${r.periodo}</td><td title="${r.concepto}">${r.concepto.length>25?r.concepto.slice(0,25)+'…':r.concepto}</td><td>${r.desc_clas}</td><td>${r.desc_fp}</td><td style="text-align:right;font-weight:600;">${r.monto.toFixed(2)}</td><td>${r.estatus_id}</td><td><button class="edit-btn" data-tab="dev" data-id="${r.dev_id}" data-a="${r.anio}" data-p="${r.periodo}" data-co="${r.concepto}" data-cl="${r.clasif_id}" data-fp="${r.forma_pago_id}" data-m="${r.monto}" data-e="${r.estatus_id}">✏️</button></td></tr>`;
+    let h='<table><thead><tr><th>ID</th><th>Año</th><th>Per</th><th>Concepto</th><th>Clasificación</th><th>F.Pago</th><th>Monto</th><th>Estatus</th><th></th></tr></thead><tbody>';
+    for(const r of d) h+=`<tr><td>${r.dev_id}</td><td>${r.anio}</td><td>${r.periodo}</td><td title="${r.concepto}">${r.concepto.length>25?r.concepto.slice(0,25)+'…':r.concepto}</td><td>${r.desc_clas}</td><td>${r.desc_fp}</td><td style="text-align:right;font-weight:600;">${r.monto.toFixed(2)}</td><td>${badgeEstatus(r.estatus)}</td><td><button class="edit-btn" data-tab="dev" data-id="${r.dev_id}" data-a="${r.anio}" data-p="${r.periodo}" data-co="${r.concepto}" data-cl="${r.clasif_id}" data-fp="${r.forma_pago_id}" data-m="${r.monto}" data-e="${r.estatus_id}">✏️</button></td></tr>`;
     h+=`</tbody></table><div class="total-info">📦 ${d.length} registros &nbsp;|&nbsp; <strong style="color:#f85149">Total: $${total.toFixed(2)}</strong></div>`; return h;
 }
 function formatDiferencia(d) {
