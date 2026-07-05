@@ -172,8 +172,11 @@
         <div class="dash-card reg"><div class="icon">📦</div><div class="value" id="dashTirillas">-</div><div class="label">Registros en Tirillas</div></div>
     </div>
     <div class="card">
-        <div class="card-title">📈 Últimos períodos</div>
-        <div id="dashOutput" style="font-size:13px;color:#8b949e;">Cargando datos del dashboard...</div>
+        <div class="card-title">📊 Distribución de Egresos por Clasificación</div>
+        <div style="max-width:500px;margin:0 auto;">
+            <canvas id="donaGrafico"></canvas>
+        </div>
+        <div id="dashDonaEmpty" style="font-size:13px;color:#8b949e;text-align:center;padding:10px;">Cargando...</div>
     </div>
     <div class="card">
         <div class="card-title" style="color:#f85149;">⚠️ Deudas Pendientes</div>
@@ -190,6 +193,7 @@
             <button id="btnFiltrar" class="btn-primary btn-xs">🔍 Filtrar</button>
             <button id="btnTodo" class="btn-outline btn-xs">📋 Todas</button>
             <button id="btnLimpiarTir" class="btn-danger btn-xs">🗑️ Limpiar</button>
+            <button id="btnToggleEstatus" class="btn-sql btn-xs">🔄 Cambiar Estatus (0↔1)</button>
         </div>
     </div>
     <div class="card">
@@ -442,7 +446,47 @@ async function cargarDashboard() {
         document.getElementById('dashDiferencia').textContent='$'+difTotal.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g,',');
         document.getElementById('dashDiferencia').style.color=difTotal<0?'#f85149':'#3fb950';
         document.getElementById('dashTirillas').textContent=tirillas.length;
-        document.getElementById('dashOutput').innerHTML=formatDiferencia(disponible);
+
+        // ---- Gráfica de dona: Egresos por clasificación ----
+        const donaEl = document.getElementById('donaGrafico');
+        const donaEmpty = document.getElementById('dashDonaEmpty');
+        if (dev && dev.length > 0) {
+            donaEmpty.style.display = 'none';
+            const clasifMap = {};
+            dev.forEach(d => {
+                const key = d.desc_clas || 'Sin clasificar';
+                clasifMap[key] = (clasifMap[key] || 0) + d.monto;
+            });
+            const labels = Object.keys(clasifMap);
+            const values = Object.values(clasifMap);
+            const colores = ['#f85149','#d2a8ff','#58a6ff','#3fb950','#bb8009','#1f6feb','#da3633','#9e6a03','#238636','#7ee787'];
+            if (window.donaChart) window.donaChart.destroy();
+            window.donaChart = new Chart(donaEl.getContext('2d'), {
+                type: 'doughnut',
+                data: {
+                    labels,
+                    datasets: [{
+                        data: values,
+                        backgroundColor: labels.map((_, i) => colores[i % colores.length]),
+                        borderColor: '#161b22',
+                        borderWidth: 2
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: {
+                            position: 'right',
+                            labels: { color: '#c9d1d9', padding: 12, font: { size: 12 } }
+                        }
+                    }
+                }
+            });
+        } else {
+            donaEmpty.style.display = 'block';
+            donaEmpty.textContent = '📭 No hay egresos registrados.';
+        }
+
         if(!deudas||!deudas.length){
             document.getElementById('dashDeudas').innerHTML='<span style="color:#3fb950;">✅ No hay deudas pendientes.</span>';
         } else {
@@ -452,7 +496,7 @@ async function cargarDashboard() {
             h+=`<tr style="background:#1c2128;font-weight:700;"><td>Total Deudas</td><td style="text-align:right;color:#f85149;">${formatMoney(total)}</td></tr>`; h+='</tbody></table>';
             document.getElementById('dashDeudas').innerHTML=h;
         }
-    }catch(e){ document.getElementById('dashDeudas').textContent='Error: '+(e.message||e); document.getElementById('dashOutput').textContent='Error al cargar dashboard: '+(e.message||e); }
+    }catch(e){ document.getElementById('dashDeudas').textContent='Error: '+(e.message||e); console.error('Error al cargar dashboard:', e); }
 }
 
 // ===== EXPORTAR CSV =====
@@ -594,6 +638,19 @@ document.getElementById('btnCalcularTotal').addEventListener('click',async()=>{
 document.getElementById('btnLimpiarTir').addEventListener('click',()=>{
     document.getElementById('filtroAnio').value=''; document.getElementById('filtroPeriodo').value='';
     outTir.innerHTML='<div style="padding:20px;text-align:center;color:#8b949e;">Presiona un botón para cargar datos...</div>';
+});
+
+// ---- Cambiar estatus de todas las tirillas de un periodo (toggle 0↔1) ----
+document.getElementById('btnToggleEstatus').addEventListener('click',async()=>{
+    const a=parseInt(document.getElementById('filtroAnio').value);
+    const p=parseInt(document.getElementById('filtroPeriodo').value);
+    if(!a||!p){toast('Primero filtra por Año y Período.','info');return;}
+    if(!confirm(`¿Cambiar estatus (0↔1) de todas las tirillas de ${a}-${p}?`)) return;
+    try{
+        const res=await apiPOST('/tirillas/toggle-estatus', {anio:a, periodo:p});
+        toast(`✅ Estatus cambiado en ${res.filas} registros`);
+        document.getElementById('btnFiltrar').click();
+    }catch(e){showError(outTir,e);}
 });
 
 // ===== DEVENGADO =====

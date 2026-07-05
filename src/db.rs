@@ -291,6 +291,24 @@ pub async fn insert_tirilla_multi(
     Ok(result.rows_affected())
 }
 
+/// Cambia el estatus de todas las tirillas de un año/período (toggle 0↔1).
+pub async fn update_tirilla_estatus_by_period(
+    pool: &PgPool,
+    anio: i16,
+    periodo: i16,
+) -> Result<u64, sqlx::Error> {
+    let result = sqlx::query(
+        "UPDATE ingresos.tirillas \
+         SET estatus_id = CASE WHEN estatus_id = 0 THEN 1 ELSE 0 END \
+         WHERE anio = $1 AND periodo = $2"
+    )
+    .bind(anio)
+    .bind(periodo)
+    .execute(pool)
+    .await?;
+    Ok(result.rows_affected())
+}
+
 /// Recalcula `monto_total` según el tipo de concepto (positivo para tipo 1,3; negativo para los demás).
 pub async fn recalcular_monto_total(pool: &PgPool) -> Result<u64, sqlx::Error> {
     let result = sqlx::query(

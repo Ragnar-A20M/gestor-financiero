@@ -161,6 +161,12 @@ struct InsertTirillaBody {
 }
 
 #[derive(Deserialize)]
+struct TirillaEstatusPeriodBody {
+    anio: i16,
+    periodo: i16,
+}
+
+#[derive(Deserialize)]
 struct InsertTirillaMultiBody {
     anio: i16,
     periodo_inicio: i16,
@@ -389,6 +395,16 @@ async fn api_insert_tirilla_multi(
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
 }
 
+async fn api_toggle_tirilla_estatus(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<TirillaEstatusPeriodBody>,
+) -> Result<Json<FilasAfectadas>, (StatusCode, String)> {
+    db::update_tirilla_estatus_by_period(&state.db, body.anio, body.periodo)
+        .await
+        .map(|f| Json(FilasAfectadas { filas: f }))
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
+}
+
 // =============================================================================
 // Handlers: DISPONIBLE
 // =============================================================================
@@ -551,6 +567,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/api/tirillas/actualizar", post(api_update_tirilla))
         .route("/api/tirillas/recalcular", post(api_recalcular_total))
         .route("/api/tirillas/insertar-multi", post(api_insert_tirilla_multi))
+        .route("/api/tirillas/toggle-estatus", post(api_toggle_tirilla_estatus))
         // Disponible
         .route("/api/disponible", get(api_get_disponible))
         // Devengados
