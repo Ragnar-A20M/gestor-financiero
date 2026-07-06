@@ -474,6 +474,24 @@ pub async fn insert_devengado_multi(
     Ok(result.rows_affected())
 }
 
+/// Obtiene la fecha de cobro de un período específico.
+pub async fn get_fecha_cobro(
+    pool: &PgPool,
+    anio: i16,
+    periodo: i16,
+) -> Result<Option<String>, sqlx::Error> {
+    let row: Option<(String,)> = sqlx::query_as(
+        "SELECT to_char(fecha_cobro, 'DD-MM-YY') \
+         FROM catalogos.periodos \
+         WHERE anio = $1 AND periodo = $2"
+    )
+    .bind(anio)
+    .bind(periodo)
+    .fetch_optional(pool)
+    .await?;
+    Ok(row.map(|r| r.0))
+}
+
 // =============================================================================
 // Funciones: CATÁLOGOS
 // =============================================================================

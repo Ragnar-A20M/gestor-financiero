@@ -535,6 +535,21 @@ async fn api_get_deudas(
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
 }
 
+async fn api_get_fecha_cobro(
+    State(state): State<Arc<AppState>>,
+    Query(filtro): Query<TirillasFiltro>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    match (filtro.anio, filtro.periodo) {
+        (Some(a), Some(p)) => {
+            let fecha = db::get_fecha_cobro(&state.db, a, p)
+                .await
+                .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+            Ok(Json(serde_json::json!({ "fecha_cobro": fecha })))
+        }
+        _ => Ok(Json(serde_json::json!({ "fecha_cobro": null }))),
+    }
+}
+
 // =============================================================================
 // Inicio del servidor
 // =============================================================================
@@ -579,6 +594,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/api/formas-pago", get(api_get_formas_pago))
         .route("/api/clasif-egresos", get(api_get_clasif_egresos))
         .route("/api/deudas", get(api_get_deudas))
+        .route("/api/fecha-cobro", get(api_get_fecha_cobro))
         // Middleware
         .layer(cors)
         .with_state(state);
