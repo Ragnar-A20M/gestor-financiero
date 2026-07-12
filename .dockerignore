@@ -1,7 +1,6 @@
-target/debug/
+target/
+!target/release/gestor-financiero-server
 .git/
 *.md
 .env
 .env.example
-sql/
-*.py

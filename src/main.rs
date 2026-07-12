@@ -5,9 +5,9 @@
 
 use axum::{
     extract::{Query, State},
-    http::{HeaderMap, StatusCode},
+    http::{HeaderMap, Method, StatusCode},
     response::{Html, Json},
-    routing::{get, post},
+    routing::{any, get, post},
     Router,
 };
 use serde::{Deserialize, Serialize};
@@ -24,6 +24,11 @@ mod db;
 use db::{
     ClasifEgreso, Concepto, DeudaPendiente, Devengado, DiferenciaResult, FormaPago, Tirilla,
 };
+
+/// Método HTTP QUERY (RFC 10008)
+fn es_query(method: &Method) -> bool {
+    method == Method::from_bytes(b"QUERY").unwrap()
+}
 
 /// Estado compartido: pool de conexiones + sesiones activas
 struct AppState {
@@ -90,14 +95,11 @@ async fn verificar_auth(
 // Rate Limiter para login
 // =============================================================================
 
-/// Entrada del rate limiter: (intentos, ventana_inicia_en)
 type RateLimitStore = Arc<Mutex<HashMap<String, (u32, Instant)>>>;
 
-/// Límites: 5 intentos por minuto por IP
 const MAX_LOGIN_ATTEMPTS: u32 = 5;
 const RATE_LIMIT_WINDOW_SECS: u64 = 60;
 
-/// Verifica si la IP puede intentar login. Retorna Ok o 429.
 async fn check_rate_limit(
     store: &RateLimitStore,
     ip: &str,
@@ -108,7 +110,6 @@ async fn check_rate_limit(
     if let Some((count, window_start)) = map.get(ip) {
         let elapsed = now.duration_since(*window_start).as_secs();
         if elapsed < RATE_LIMIT_WINDOW_SECS {
-            // Dentro de la ventana de tiempo
             if *count >= MAX_LOGIN_ATTEMPTS {
                 return Err((
                     StatusCode::TOO_MANY_REQUESTS,
@@ -116,22 +117,19 @@ async fn check_rate_limit(
                 ));
             }
         } else {
-            // Ventana expirada, reiniciar
             map.insert(ip.to_string(), (1, now));
             return Ok(());
         }
     }
     
-    // Incrementar contador
     let entry = map.entry(ip.to_string()).or_insert((0, now));
     entry.0 += 1;
     if entry.0 == 1 {
-        entry.1 = now; // primera vez en esta ventana
+        entry.1 = now;
     }
     Ok(())
 }
 
-/// Extrae la IP del cliente desde los headers
 fn extraer_ip(headers: &HeaderMap) -> String {
     headers
         .get("x-forwarded-for")
@@ -147,7 +145,7 @@ fn extraer_ip(headers: &HeaderMap) -> String {
 }
 
 // =============================================================================
-// Tipos para peticiones POST (JSON body)
+// Tipos para peticiones
 // =============================================================================
 
 #[derive(Deserialize)]
@@ -229,11 +227,9 @@ struct FilasAfectadas {
 }
 
 // =============================================================================
-// Query params para filtros GET
+// Query params para filtros
 // =============================================================================
 
-/// Deserializa un `Option<T>` tratando los strings vacíos como `None`.
-/// Útil para query params donde el frontend envía valores vacíos.
 fn deserialize_opt_i16<'de, D: serde::Deserializer<'de>>(
     d: D,
 ) -> Result<Option<i16>, D::Error> {
@@ -271,6 +267,44 @@ struct DevengadosFiltro {
 }
 
 // =============================================================================
+// Body para endpoint QUERY (RFC 10008)
+// =============================================================================
+
+#[derive(Deserialize)]
+struct TirillaQueryBody {
+    anio: Option<i16>,
+    periodo: Option<i16>,
+    limite: Option<i64>,
+    offset: Option<i64>,
+}
+
+#[derive(Deserialize)]
+struct DevengadoQueryBody {
+    anio: Option<i16>,
+    periodo: Option<i16>,
+    estatus_id: Option<i16>,
+    clasif_id: Option<i16>,
+    limite: Option<i64>,
+    offset: Option<i64>,
+}
+
+#[derive(Serialize)]
+struct TirillaQueryResult {
+    data: Vec<Tirilla>,
+    total: i64,
+    offset: i64,
+    limite: i64,
+}
+
+#[derive(Serialize)]
+struct DevengadoQueryResult {
+    data: Vec<Devengado>,
+    total: i64,
+    offset: i64,
+    limite: i64,
+}
+
+// =============================================================================
 // Handler: LOGIN
 // =============================================================================
 
@@ -279,7 +313,6 @@ async fn api_login(
     headers: HeaderMap,
     Json(body): Json<LoginBody>,
 ) -> Result<Json<LoginResponse>, (StatusCode, Json<MsgError>)> {
-    // Rate limiting
     let ip = extraer_ip(&headers);
     check_rate_limit(&state.rate_limiter, &ip).await?;
     
@@ -324,6 +357,32 @@ async fn api_get_tirillas_filtradas(
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
 }
 
+/// Endpoint que acepta HTTP QUERY (RFC 10008).
+/// Se monta con any() porque axum 0.7 no soporta métodos personalizados en MethodFilter.
+async fn api_query_tirillas(
+    method: Method,
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Json(body): Json<TirillaQueryBody>,
+) -> Result<Json<TirillaQueryResult>, (StatusCode, String)> {
+    if !es_query(&method) {
+        return Err((StatusCode::METHOD_NOT_ALLOWED, "Use método QUERY (RFC 10008)".into()));
+    }
+    verificar_auth(&headers, &state.sesiones).await
+        .map_err(|(s, _)| (s, "No autorizado".into()))?;
+    
+    let tirillas = db::get_tirillas_filtradas(&state.db, body.anio, body.periodo)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    
+    let total = tirillas.len() as i64;
+    let limite = body.limite.unwrap_or(100);
+    let offset = body.offset.unwrap_or(0);
+    let data: Vec<Tirilla> = tirillas.into_iter().skip(offset as usize).take(limite as usize).collect();
+    
+    Ok(Json(TirillaQueryResult { data, total, offset, limite }))
+}
+
 async fn api_insert_tirilla(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
@@ -331,37 +390,20 @@ async fn api_insert_tirilla(
 ) -> Result<StatusCode, (StatusCode, String)> {
     verificar_auth(&headers, &state.sesiones).await
         .map_err(|(s, _)| (s, "No autorizado".into()))?;
-    db::insert_tirilla(
-        &state.db,
-        body.anio,
-        body.periodo,
-        body.forma_id,
-        body.concepto_id,
-        body.monto_abs,
-        body.estatus_id,
-    )
-    .await
-    .map(|_| StatusCode::CREATED)
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
+    db::insert_tirilla(&state.db, body.anio, body.periodo, body.forma_id, body.concepto_id, body.monto_abs, body.estatus_id)
+        .await
+        .map(|_| StatusCode::CREATED)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
 }
 
 async fn api_update_tirilla(
     State(state): State<Arc<AppState>>,
     Json(body): Json<UpdateTirillaBody>,
 ) -> Result<StatusCode, (StatusCode, String)> {
-    db::update_tirilla(
-        &state.db,
-        body.tir_id,
-        body.anio,
-        body.periodo,
-        body.forma_id,
-        body.concepto_id,
-        body.monto_abs,
-        body.estatus_id,
-    )
-    .await
-    .map(|_| StatusCode::OK)
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
+    db::update_tirilla(&state.db, body.tir_id, body.anio, body.periodo, body.forma_id, body.concepto_id, body.monto_abs, body.estatus_id)
+        .await
+        .map(|_| StatusCode::OK)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
 }
 
 async fn api_recalcular_total(
@@ -380,19 +422,10 @@ async fn api_insert_tirilla_multi(
 ) -> Result<Json<FilasAfectadas>, (StatusCode, String)> {
     verificar_auth(&headers, &state.sesiones).await
         .map_err(|(s, _)| (s, "No autorizado".into()))?;
-    db::insert_tirilla_multi(
-        &state.db,
-        body.anio,
-        body.periodo_inicio,
-        body.periodo_fin,
-        body.forma_id,
-        body.concepto_id,
-        body.monto_abs,
-        body.estatus_id,
-    )
-    .await
-    .map(|f| Json(FilasAfectadas { filas: f }))
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
+    db::insert_tirilla_multi(&state.db, body.anio, body.periodo_inicio, body.periodo_fin, body.forma_id, body.concepto_id, body.monto_abs, body.estatus_id)
+        .await
+        .map(|f| Json(FilasAfectadas { filas: f }))
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
 }
 
 async fn api_toggle_tirilla_estatus(
@@ -436,63 +469,65 @@ async fn api_get_devengados(
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
 }
 
+/// Endpoint que acepta HTTP QUERY (RFC 10008).
+async fn api_query_devengados(
+    method: Method,
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Json(body): Json<DevengadoQueryBody>,
+) -> Result<Json<DevengadoQueryResult>, (StatusCode, String)> {
+    if !es_query(&method) {
+        return Err((StatusCode::METHOD_NOT_ALLOWED, "Use método QUERY (RFC 10008)".into()));
+    }
+    verificar_auth(&headers, &state.sesiones).await
+        .map_err(|(s, _)| (s, "No autorizado".into()))?;
+    
+    let devengados = db::get_devengados(&state.db, body.anio, body.periodo, body.estatus_id)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    
+    let filtered: Vec<Devengado> = if let Some(clasif) = body.clasif_id {
+        devengados.into_iter().filter(|d| d.clasif_id == clasif).collect()
+    } else {
+        devengados
+    };
+    
+    let total = filtered.len() as i64;
+    let limite = body.limite.unwrap_or(100);
+    let offset = body.offset.unwrap_or(0);
+    let data: Vec<Devengado> = filtered.into_iter().skip(offset as usize).take(limite as usize).collect();
+    
+    Ok(Json(DevengadoQueryResult { data, total, offset, limite }))
+}
+
 async fn api_insert_devengado(
     State(state): State<Arc<AppState>>,
     Json(body): Json<InsertDevengadoBody>,
 ) -> Result<StatusCode, (StatusCode, String)> {
-    db::insert_devengado(
-        &state.db,
-        body.anio,
-        body.periodo,
-        body.concepto,
-        body.clasif_id,
-        body.forma_pago_id,
-        body.monto,
-        body.estatus_id,
-    )
-    .await
-    .map(|_| StatusCode::CREATED)
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
+    db::insert_devengado(&state.db, body.anio, body.periodo, body.concepto, body.clasif_id, body.forma_pago_id, body.monto, body.estatus_id)
+        .await
+        .map(|_| StatusCode::CREATED)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
 }
 
 async fn api_update_devengado(
     State(state): State<Arc<AppState>>,
     Json(body): Json<UpdateDevengadoBody>,
 ) -> Result<StatusCode, (StatusCode, String)> {
-    db::update_devengado(
-        &state.db,
-        body.dev_id,
-        body.anio,
-        body.periodo,
-        body.concepto,
-        body.clasif_id,
-        body.forma_pago_id,
-        body.monto,
-        body.estatus_id,
-    )
-    .await
-    .map(|_| StatusCode::OK)
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
+    db::update_devengado(&state.db, body.dev_id, body.anio, body.periodo, body.concepto, body.clasif_id, body.forma_pago_id, body.monto, body.estatus_id)
+        .await
+        .map(|_| StatusCode::OK)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
 }
 
 async fn api_insert_devengado_multi(
     State(state): State<Arc<AppState>>,
     Json(body): Json<InsertDevengadoMultiBody>,
 ) -> Result<Json<FilasAfectadas>, (StatusCode, String)> {
-    db::insert_devengado_multi(
-        &state.db,
-        body.anio,
-        body.periodo_inicio,
-        body.periodo_fin,
-        &body.concepto,
-        body.clasif_id,
-        body.forma_pago_id,
-        body.monto,
-        body.estatus_id,
-    )
-    .await
-    .map(|f| Json(FilasAfectadas { filas: f }))
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
+    db::insert_devengado_multi(&state.db, body.anio, body.periodo_inicio, body.periodo_fin, &body.concepto, body.clasif_id, body.forma_pago_id, body.monto, body.estatus_id)
+        .await
+        .map(|f| Json(FilasAfectadas { filas: f }))
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
 }
 
 // =============================================================================
@@ -502,37 +537,25 @@ async fn api_insert_devengado_multi(
 async fn api_get_conceptos(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<Vec<Concepto>>, (StatusCode, String)> {
-    db::get_conceptos(&state.db)
-        .await
-        .map(Json)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
+    db::get_conceptos(&state.db).await.map(Json).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
 }
 
 async fn api_get_formas_pago(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<Vec<FormaPago>>, (StatusCode, String)> {
-    db::get_formas_pago(&state.db)
-        .await
-        .map(Json)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
+    db::get_formas_pago(&state.db).await.map(Json).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
 }
 
 async fn api_get_clasif_egresos(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<Vec<ClasifEgreso>>, (StatusCode, String)> {
-    db::get_clasif_egresos(&state.db)
-        .await
-        .map(Json)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
+    db::get_clasif_egresos(&state.db).await.map(Json).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
 }
 
 async fn api_get_deudas(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<Vec<DeudaPendiente>>, (StatusCode, String)> {
-    db::get_deudas_pendientes(&state.db)
-        .await
-        .map(Json)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
+    db::get_deudas_pendientes(&state.db).await.map(Json).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
 }
 
 async fn api_get_fecha_cobro(
@@ -551,6 +574,28 @@ async fn api_get_fecha_cobro(
 }
 
 // =============================================================================
+// Health Check
+// =============================================================================
+
+async fn api_health() -> Json<serde_json::Value> {
+    Json(serde_json::json!({
+        "status": "ok",
+        "timestamp": chrono::Utc::now().to_rfc3339()
+    }))
+}
+
+// =============================================================================
+fn asegurar_ssl_mode(url: &str) -> String {
+    if url.contains("sslmode=") {
+        url.to_string()
+    } else if url.contains('?') {
+        format!("{}&sslmode=require", url)
+    } else {
+        format!("{}?sslmode=require", url)
+    }
+}
+
+// =============================================================================
 // Inicio del servidor
 // =============================================================================
 
@@ -558,7 +603,8 @@ async fn api_get_fecha_cobro(
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().ok();
 
-    let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+    let raw_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+    let database_url = asegurar_ssl_mode(&raw_url);
     let pool = PgPool::connect(&database_url).await?;
 
     let sesiones: Arc<Mutex<HashMap<String, String>>> = Arc::new(Mutex::new(HashMap::new()));
@@ -572,13 +618,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cors = CorsLayer::permissive();
 
     let app = Router::new()
-        // Servir frontend
+        .route("/health", get(api_health))
         .route("/", get(|| async { Html(include_str!("../static/index.html")) }))
-        // Login
         .route("/api/login", post(api_login))
         // Tirillas
         .route("/api/tirillas", get(api_get_tirillas).post(api_insert_tirilla))
         .route("/api/tirillas/filtradas", get(api_get_tirillas_filtradas))
+        .route("/api/tirillas/consulta", any(api_query_tirillas))
         .route("/api/tirillas/actualizar", post(api_update_tirilla))
         .route("/api/tirillas/recalcular", post(api_recalcular_total))
         .route("/api/tirillas/insertar-multi", post(api_insert_tirilla_multi))
@@ -587,6 +633,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/api/disponible", get(api_get_disponible))
         // Devengados
         .route("/api/devengados", get(api_get_devengados).post(api_insert_devengado))
+        .route("/api/devengados/consulta", any(api_query_devengados))
         .route("/api/devengados/actualizar", post(api_update_devengado))
         .route("/api/devengados/insertar-multi", post(api_insert_devengado_multi))
         // Catálogos
@@ -595,27 +642,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/api/clasif-egresos", get(api_get_clasif_egresos))
         .route("/api/deudas", get(api_get_deudas))
         .route("/api/fecha-cobro", get(api_get_fecha_cobro))
-        // Middleware
         .layer(cors)
         .with_state(state);
 
     let addr = "0.0.0.0:3000";
     println!("🚀 Servidor corriendo en http://{}", addr);
     println!("🌐 Frontend: http://localhost:3000/");
-    println!("📋 API endpoints:");
-    println!("   GET|POST /api/tirillas");
-    println!("   GET      /api/tirillas/filtradas?anio=&periodo=");
-    println!("   POST     /api/tirillas/actualizar");
-    println!("   POST     /api/tirillas/recalcular");
-    println!("   GET      /api/disponible?anio=");
-    println!("   GET|POST /api/devengados");
-    println!("   POST     /api/devengados/actualizar");
-    println!("   POST     /api/tirillas/insertar-multi");
-    println!("   POST     /api/devengados/insertar-multi");
-    println!("   GET      /api/conceptos");
-    println!("   GET      /api/formas-pago");
-    println!("   GET      /api/clasif-egresos");
-    println!("   GET      /api/deudas");
+    println!("📋 QUERY endpoints (RFC 10008): /api/tirillas/consulta, /api/devengados/consulta");
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
     axum::serve(listener, app).await?;
