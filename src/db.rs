@@ -358,7 +358,7 @@ pub async fn get_devengados(
                 COALESCE(e.estatus, '') AS estatus \
          FROM egresos.devengado d \
          JOIN catalogos.clasif_egreso ce ON d.clasif_id = ce.clas_id \
-         JOIN segmento.forma_pago fp ON d.forma_pago_id = fp.fp_id \
+         JOIN segmentos.forma_pago fp ON d.forma_pago_id = fp.fp_id \
          LEFT JOIN segmentos.estatus e ON d.estatus_id = e.est_id \
          WHERE 1=1"
     );
@@ -492,9 +492,54 @@ pub async fn get_fecha_cobro(
     Ok(row.map(|r| r.0))
 }
 
+/// Obtiene datos de cascada: neto y acumulado agrupados por año/periodo desde tirillas.
+///
+/// Calcula total (monto_abs), neto (con signo según concepto_id) y acumulado (ventana).
+pub async fn get_cascada(pool: &PgPool) -> Result<Vec<CascadaResult>, sqlx::Error> {
+    let rows = sqlx::query_as::<_, CascadaResult>(
+        "WITH datos_agrupados AS (
+            SELECT 
+                tir.anio,
+                tir.periodo,
+                SUM(tir.monto_abs)::float8 AS total,
+                SUM(CASE 
+                    WHEN tir.concepto_id IN (6, 24) THEN -tir.monto_abs
+                    ELSE tir.monto_abs
+                END)::float8 AS neto
+            FROM ingresos.tirillas tir
+            INNER JOIN catalogos.conceptos con ON tir.concepto_id = con.concept_id
+            INNER JOIN soporte.tipo_concepto tip ON con.tipo_id = tip.ti_co_id
+            WHERE tir.concepto_id IN (6, 18, 24)
+            AND tir.estatus_id = 1
+            GROUP BY tir.anio, tir.periodo
+        )
+        SELECT 
+            anio,
+            periodo,
+            total,
+            neto,
+            SUM(neto) OVER (ORDER BY anio, periodo)::float8 AS acumulado
+        FROM datos_agrupados
+        ORDER BY anio ASC, periodo ASC"
+    )
+        .fetch_all(pool)
+        .await?;
+    Ok(rows)
+}
+
 // =============================================================================
 // Funciones: CATÁLOGOS
 // =============================================================================
+
+/// Resultado de la consulta de cascada (neto y acumulado por período desde tirillas).
+#[derive(Debug, Serialize, Deserialize, FromRow)]
+pub struct CascadaResult {
+    pub anio: i16,
+    pub periodo: i16,
+    pub total: f64,
+    pub neto: f64,
+    pub acumulado: f64,
+}
 
 /// Obtiene las deudas pendientes (clasif_id = 7, estatus_id = 0) agrupadas por clasificación y concepto.
 pub async fn get_deudas_pendientes(pool: &PgPool) -> Result<Vec<DeudaPendiente>, sqlx::Error> {
@@ -524,7 +569,7 @@ pub async fn get_conceptos(pool: &PgPool) -> Result<Vec<Concepto>, sqlx::Error> 
 /// Obtiene todas las formas de pago.
 pub async fn get_formas_pago(pool: &PgPool) -> Result<Vec<FormaPago>, sqlx::Error> {
     let rows = sqlx::query_as::<_, FormaPago>(
-        "SELECT fp_id, desc_fp FROM segmento.forma_pago ORDER BY desc_fp"
+        "SELECT fp_id, desc_fp FROM segmentos.forma_pago ORDER BY desc_fp"
     )
     .fetch_all(pool)
     .await?;

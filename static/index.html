@@ -179,6 +179,13 @@
         <div id="dashDonaEmpty" style="font-size:13px;color:#8b949e;text-align:center;padding:10px;">Cargando...</div>
     </div>
     <div class="card">
+        <div class="card-title" style="color:#d2a8ff;">📊 Cascada: Neto vs Acumulado (Tirillas conceptos 6,18,24)</div>
+        <div>
+            <canvas id="cascadaGrafico"></canvas>
+        </div>
+        <div id="dashCascadaEmpty" style="font-size:13px;color:#8b949e;text-align:center;padding:10px;">Cargando...</div>
+    </div>
+    <div class="card">
         <div class="card-title" style="color:#f85149;">⚠️ Deudas Pendientes</div>
         <div id="dashDeudas" style="font-size:13px;color:#8b949e;">Cargando deudas...</div>
     </div>
@@ -503,6 +510,89 @@ async function cargarDashboard() {
             for(const r of deudas){ h+=`<tr><td>${r.concepto}</td><td style="text-align:right;font-weight:600;color:#f85149;">${formatMoney(r.total_monto)}</td></tr>`; total+=r.total_monto; }
             h+=`<tr style="background:#1c2128;font-weight:700;"><td>Total Deudas</td><td style="text-align:right;color:#f85149;">${formatMoney(total)}</td></tr>`; h+='</tbody></table>';
             document.getElementById('dashDeudas').innerHTML=h;
+        }
+
+        // ---- Gráfica de cascada: Neto vs Acumulado (solo 2026) ----
+        try {
+            const cascada = await apiGET('/cascada');
+            const cascadaEl = document.getElementById('cascadaGrafico');
+            const cascadaEmpty = document.getElementById('dashCascadaEmpty');
+            // Filtrar solo año 2026 para mostrar
+            const cascada2026 = cascada.filter(r => r.anio === 2026);
+            if (cascada2026 && cascada2026.length > 0) {
+                cascadaEmpty.style.display = 'none';
+                const labels = cascada2026.map(r => r.anio + '-' + String(r.periodo).padStart(2,'0'));
+                const neto = cascada2026.map(r => r.neto);
+                // Acumulado real de la BD (arrastra valores desde 2017+)
+                const acumulado = cascada2026.map(r => r.acumulado);
+                if (window.cascadaChart) window.cascadaChart.destroy();
+                window.cascadaChart = new Chart(cascadaEl.getContext('2d'), {
+                    type: 'bar',
+                    data: {
+                        labels,
+                        datasets: [
+                            {
+                                label: 'Neto',
+                                data: neto,
+                                backgroundColor: neto.map(v => v < 0 ? 'rgba(248,81,73,0.7)' : 'rgba(63,185,80,0.7)'),
+                                borderColor: neto.map(v => v < 0 ? '#f85149' : '#3fb950'),
+                                borderWidth: 1,
+                                order: 2
+                            },
+                            {
+                                label: 'Acumulado',
+                                data: acumulado,
+                                type: 'line',
+                                borderColor: '#d2a8ff',
+                                backgroundColor: 'rgba(210,168,255,0.1)',
+                                borderWidth: 2,
+                                pointBackgroundColor: '#d2a8ff',
+                                pointBorderColor: '#d2a8ff',
+                                pointRadius: 3,
+                                fill: true,
+                                tension: 0.3,
+                                order: 1
+                            }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        interaction: { mode: 'index', intersect: false },
+                        plugins: {
+                            legend: {
+                                labels: { color: '#c9d1d9', font: { size: 12 } }
+                            },
+                            tooltip: {
+                                callbacks: {
+                                    label: function(ctx) {
+                                        return ctx.dataset.label + ': $' + ctx.parsed.y.toLocaleString('en-US', {minimumFractionDigits:2});
+                                    }
+                                }
+                            }
+                        },
+                        scales: {
+                            x: {
+                                ticks: { color: '#8b949e', font: { size: 11 } },
+                                grid: { color: '#21262d' }
+                            },
+                            y: {
+                                beginAtZero: true,
+                                ticks: {
+                                    color: '#8b949e',
+                                    callback: function(value) { return '$' + value.toLocaleString(); }
+                                },
+                                grid: { color: '#21262d' }
+                            }
+                        }
+                    }
+                });
+            } else {
+                cascadaEmpty.style.display = 'block';
+                cascadaEmpty.textContent = '📭 No hay datos de cascada disponibles.';
+            }
+        } catch(e) {
+            document.getElementById('dashCascadaEmpty').style.display = 'block';
+            document.getElementById('dashCascadaEmpty').textContent = 'Error al cargar cascada: ' + (e.message||e);
         }
     }catch(e){ document.getElementById('dashDeudas').textContent='Error: '+(e.message||e); console.error('Error al cargar dashboard:', e); }
 }
