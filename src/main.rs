@@ -22,7 +22,7 @@ use uuid::Uuid;
 
 mod db;
 use db::{
-    CascadaResult, ClasifEgreso, Concepto, DeudaPendiente, Devengado, DiferenciaResult, FormaPago, Tirilla,
+    CascadaResult, ClasifEgreso, Concepto, DeudaPendiente, DeudaTirilla, Devengado, DiferenciaResult, FormaPago, Tirilla,
 };
 
 /// Método HTTP QUERY (RFC 10008)
@@ -564,6 +564,12 @@ async fn api_get_deudas(
     db::get_deudas_pendientes(&state.db).await.map(Json).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
 }
 
+async fn api_get_deudas_tirillas(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<Vec<DeudaTirilla>>, (StatusCode, String)> {
+    db::get_deudas_tirillas(&state.db).await.map(Json).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
+}
+
 async fn api_get_fecha_cobro(
     State(state): State<Arc<AppState>>,
     Query(filtro): Query<TirillasFiltro>,
@@ -648,6 +654,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/api/clasif-egresos", get(api_get_clasif_egresos))
         .route("/api/cascada", get(api_get_cascada))
         .route("/api/deudas", get(api_get_deudas))
+        .route("/api/deudas-tirillas", get(api_get_deudas_tirillas))
         .route("/api/fecha-cobro", get(api_get_fecha_cobro))
         .layer(cors)
         .with_state(state);

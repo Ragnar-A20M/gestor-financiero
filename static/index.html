@@ -446,11 +446,12 @@ function formatDiferencia(d) {
 // ===== DASHBOARD =====
 async function cargarDashboard() {
     try{
-        const [tirillas, disponible, dev, deudas] = await Promise.all([
+        const [tirillas, disponible, dev, deudas, deudasTir] = await Promise.all([
             apiGET('/tirillas'),
             apiGET('/disponible'),
             apiGET('/devengados'),
-            apiGET('/deudas')
+            apiGET('/deudas'),
+            apiGET('/deudas-tirillas')
         ]);
         let ingresos=0, egresos=0;
         tirillas.forEach(t=>{ if(t.monto_total!==null && t.monto_total>0) ingresos+=t.monto_total; else if(t.monto_total!==null) egresos+=Math.abs(t.monto_total); });
@@ -502,14 +503,37 @@ async function cargarDashboard() {
             donaEmpty.textContent = '📭 No hay egresos registrados.';
         }
 
-        if(!deudas||!deudas.length){
+        // Combinar deudas de devengado (clasif 7) + tirillas (conceptos 13, 31)
+        let hayDeudas = (deudas && deudas.length > 0) || (deudasTir && deudasTir.length > 0);
+        if (!hayDeudas) {
             document.getElementById('dashDeudas').innerHTML='<span style="color:#3fb950;">✅ No hay deudas pendientes.</span>';
         } else {
-            let total=0;
-            let h='<table><thead><tr><th>Concepto</th><th>Total</th></tr></thead><tbody>';
-            for(const r of deudas){ h+=`<tr><td>${r.concepto}</td><td style="text-align:right;font-weight:600;color:#f85149;">${formatMoney(r.total_monto)}</td></tr>`; total+=r.total_monto; }
-            h+=`<tr style="background:#1c2128;font-weight:700;"><td>Total Deudas</td><td style="text-align:right;color:#f85149;">${formatMoney(total)}</td></tr>`; h+='</tbody></table>';
-            document.getElementById('dashDeudas').innerHTML=h;
+            let totalGeneral = 0;
+            let h = '<table><thead><tr><th>Origen</th><th>Concepto</th><th>Total</th></tr></thead><tbody>';
+            // Deudas desde devengado (clasif 7)
+            if (deudas && deudas.length > 0) {
+                for (const r of deudas) {
+                    h += `<tr><td>📋 Devengado</td><td>${r.concepto}</td><td style="text-align:right;font-weight:600;color:#f85149;">${formatMoney(r.total_monto)}</td></tr>`;
+                    totalGeneral += r.total_monto;
+                }
+            }
+            // Deudas desde tirillas (conceptos 13, 31)
+            if (deudasTir && deudasTir.length > 0) {
+                // Agrupar por concepto
+                const agrupado = {};
+                for (const r of deudasTir) {
+                    const key = r.concepto;
+                    if (!agrupado[key]) agrupado[key] = 0;
+                    agrupado[key] += r.monto_abs;
+                }
+                for (const [concepto, total] of Object.entries(agrupado)) {
+                    h += `<tr><td>📄 Tirillas</td><td>${concepto}</td><td style="text-align:right;font-weight:600;color:#f85149;">${formatMoney(total)}</td></tr>`;
+                    totalGeneral += total;
+                }
+            }
+            h += `<tr style="background:#1c2128;font-weight:700;"><td colspan="2">Total Deudas</td><td style="text-align:right;color:#f85149;">${formatMoney(totalGeneral)}</td></tr>`;
+            h += '</tbody></table>';
+            document.getElementById('dashDeudas').innerHTML = h;
         }
 
         // ---- Gráfica de cascada: Neto vs Acumulado (solo 2026) ----

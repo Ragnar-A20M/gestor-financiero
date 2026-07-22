@@ -71,6 +71,15 @@ pub struct DiferenciaResult {
     pub diferencia: f64,
 }
 
+/// Deudas desde tirillas (conceptos 13, 31, estatus_id = 0).
+#[derive(Debug, Serialize, Deserialize, FromRow)]
+pub struct DeudaTirilla {
+    pub anio: i16,
+    pub periodo: i16,
+    pub concepto: String,
+    pub monto_abs: f64,
+}
+
 /// Resultado de la consulta de deudas pendientes (clasif_id = 7, estatus_id = 0).
 #[derive(Debug, Serialize, Deserialize, FromRow)]
 pub struct DeudaPendiente {
@@ -550,6 +559,21 @@ pub async fn get_deudas_pendientes(pool: &PgPool) -> Result<Vec<DeudaPendiente>,
          WHERE dev.clasif_id = 7 AND dev.estatus_id = 0 \
          GROUP BY ce.desc_clas, dev.concepto \
          ORDER BY dev.concepto"
+    )
+    .fetch_all(pool)
+    .await?;
+    Ok(rows)
+}
+
+/// Obtiene deudas desde tirillas (conceptos 13, 31, estatus_id = 0).
+pub async fn get_deudas_tirillas(pool: &PgPool) -> Result<Vec<DeudaTirilla>, sqlx::Error> {
+    let rows = sqlx::query_as::<_, DeudaTirilla>(
+        "SELECT tir.anio, tir.periodo, cc.concepto, tir.monto_abs::float8 \
+         FROM ingresos.tirillas tir \
+         INNER JOIN catalogos.conceptos cc ON tir.concepto_id = cc.concept_id \
+         WHERE tir.estatus_id = 0 \
+           AND tir.concepto_id IN (13, 31) \
+         ORDER BY tir.anio ASC, tir.periodo ASC"
     )
     .fetch_all(pool)
     .await?;
