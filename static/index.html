@@ -508,30 +508,25 @@ async function cargarDashboard() {
         if (!hayDeudas) {
             document.getElementById('dashDeudas').innerHTML='<span style="color:#3fb950;">✅ No hay deudas pendientes.</span>';
         } else {
-            let totalGeneral = 0;
-            let h = '<table><thead><tr><th>Origen</th><th>Concepto</th><th>Total</th></tr></thead><tbody>';
+            let totalGeneral = 0, totalPagos = 0;
+            let h = '<table><thead><tr><th>Origen</th><th>Concepto</th><th>Pagos Ptes.</th><th>Total</th></tr></thead><tbody>';
             // Deudas desde devengado (clasif 7)
             if (deudas && deudas.length > 0) {
                 for (const r of deudas) {
-                    h += `<tr><td>📋 Devengado</td><td>${r.concepto}</td><td style="text-align:right;font-weight:600;color:#f85149;">${formatMoney(r.total_monto)}</td></tr>`;
+                    h += `<tr><td>📋 Devengado</td><td>${r.concepto}</td><td style="text-align:center;">${r.cantidad}</td><td style="text-align:right;font-weight:600;color:#f85149;">${formatMoney(r.total_monto)}</td></tr>`;
                     totalGeneral += r.total_monto;
+                    totalPagos += r.cantidad;
                 }
             }
             // Deudas desde tirillas (conceptos 13, 31)
             if (deudasTir && deudasTir.length > 0) {
-                // Agrupar por concepto
-                const agrupado = {};
                 for (const r of deudasTir) {
-                    const key = r.concepto;
-                    if (!agrupado[key]) agrupado[key] = 0;
-                    agrupado[key] += r.monto_abs;
-                }
-                for (const [concepto, total] of Object.entries(agrupado)) {
-                    h += `<tr><td>📄 Tirillas</td><td>${concepto}</td><td style="text-align:right;font-weight:600;color:#f85149;">${formatMoney(total)}</td></tr>`;
-                    totalGeneral += total;
+                    h += `<tr><td>📄 Tirillas</td><td>${r.concepto}</td><td style="text-align:center;">${r.cantidad}</td><td style="text-align:right;font-weight:600;color:#f85149;">${formatMoney(r.total_monto)}</td></tr>`;
+                    totalGeneral += r.total_monto;
+                    totalPagos += r.cantidad;
                 }
             }
-            h += `<tr style="background:#1c2128;font-weight:700;"><td colspan="2">Total Deudas</td><td style="text-align:right;color:#f85149;">${formatMoney(totalGeneral)}</td></tr>`;
+            h += `<tr style="background:#1c2128;font-weight:700;"><td colspan="2">Total Deudas</td><td style="text-align:center;">${totalPagos}</td><td style="text-align:right;color:#f85149;">${formatMoney(totalGeneral)}</td></tr>`;
             h += '</tbody></table>';
             document.getElementById('dashDeudas').innerHTML = h;
         }

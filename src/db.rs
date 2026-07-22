@@ -71,13 +71,12 @@ pub struct DiferenciaResult {
     pub diferencia: f64,
 }
 
-/// Deudas desde tirillas (conceptos 13, 31, estatus_id = 0).
+/// Deudas desde tirillas (conceptos 13, 31, estatus_id = 0) agrupadas por concepto.
 #[derive(Debug, Serialize, Deserialize, FromRow)]
 pub struct DeudaTirilla {
-    pub anio: i16,
-    pub periodo: i16,
     pub concepto: String,
-    pub monto_abs: f64,
+    pub total_monto: f64,
+    pub cantidad: i32,
 }
 
 /// Resultado de la consulta de deudas pendientes (clasif_id = 7, estatus_id = 0).
@@ -86,6 +85,7 @@ pub struct DeudaPendiente {
     pub desc_clas: String,
     pub concepto: String,
     pub total_monto: f64,
+    pub cantidad: i32,
 }
 
 /// Catálogo de conceptos de nómina.
@@ -553,7 +553,8 @@ pub struct CascadaResult {
 /// Obtiene las deudas pendientes (clasif_id = 7, estatus_id = 0) agrupadas por clasificación y concepto.
 pub async fn get_deudas_pendientes(pool: &PgPool) -> Result<Vec<DeudaPendiente>, sqlx::Error> {
     let rows = sqlx::query_as::<_, DeudaPendiente>(
-        "SELECT ce.desc_clas, dev.concepto, SUM(dev.monto)::float8 AS total_monto \
+        "SELECT ce.desc_clas, dev.concepto, SUM(dev.monto)::float8 AS total_monto, \
+                COUNT(*)::int AS cantidad \
          FROM egresos.devengado dev \
          INNER JOIN catalogos.clasif_egreso ce ON dev.clasif_id = ce.clas_id \
          WHERE dev.clasif_id = 7 AND dev.estatus_id = 0 \
@@ -565,15 +566,17 @@ pub async fn get_deudas_pendientes(pool: &PgPool) -> Result<Vec<DeudaPendiente>,
     Ok(rows)
 }
 
-/// Obtiene deudas desde tirillas (conceptos 13, 31, estatus_id = 0).
+/// Obtiene deudas desde tirillas (conceptos 13, 31, estatus_id = 0) agrupadas por concepto.
 pub async fn get_deudas_tirillas(pool: &PgPool) -> Result<Vec<DeudaTirilla>, sqlx::Error> {
     let rows = sqlx::query_as::<_, DeudaTirilla>(
-        "SELECT tir.anio, tir.periodo, cc.concepto, tir.monto_abs::float8 \
+        "SELECT cc.concepto, SUM(tir.monto_abs)::float8 AS total_monto, \
+                COUNT(*)::int AS cantidad \
          FROM ingresos.tirillas tir \
          INNER JOIN catalogos.conceptos cc ON tir.concepto_id = cc.concept_id \
          WHERE tir.estatus_id = 0 \
            AND tir.concepto_id IN (13, 31) \
-         ORDER BY tir.anio ASC, tir.periodo ASC"
+         GROUP BY cc.concepto \
+         ORDER BY cc.concepto"
     )
     .fetch_all(pool)
     .await?;
