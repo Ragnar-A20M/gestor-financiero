@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Gestor Financiero</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script type="text/javascript" src="https://www.gstatic.com/charts/loader.js"></script>
     <style>
         * { box-sizing: border-box; margin:0; padding:0; }
         body { font-family:'Segoe UI',Arial,sans-serif; background:#0d1117; color:#c9d1d9; padding:0; }
@@ -165,18 +166,29 @@
 <div class="main">
 
 <div id="tabDashboard" class="tab-content active">
+    <div class="card" style="display:flex;align-items:center;gap:10px;padding:10px 16px;">
+        <label style="color:#8b949e;font-size:13px;font-weight:600;">📅 Año:</label>
+        <select id="dashAnioSelect" style="background:#0d1117;color:#c9d1d9;border:1px solid #30363d;border-radius:6px;padding:6px 10px;font-size:13px;font-family:inherit;width:100px;">
+            <option value="2026">2026</option>
+            <option value="2025">2025</option>
+            <option value="2024">2024</option>
+            <option value="2023">2023</option>
+            <option value="2022">2022</option>
+            <option value="">Todos</option>
+        </select>
+        <span style="color:#8b949e;font-size:12px;margin-left:4px;">(filtra tarjetas y treemap)</span>
+    </div>
     <div class="dash-grid" id="dashGrid">
         <div class="dash-card ing"><div class="icon">📈</div><div class="value" id="dashIngresos">-</div><div class="label">Total Ingresos (tipo 1,3)</div></div>
         <div class="dash-card egr"><div class="icon">📉</div><div class="value" id="dashEgresos">-</div><div class="label">Total Egresos</div></div>
         <div class="dash-card dif"><div class="icon">⚖️</div><div class="value" id="dashDiferencia">-</div><div class="label">Diferencia Neta</div></div>
-        <div class="dash-card reg"><div class="icon">📦</div><div class="value" id="dashTirillas">-</div><div class="label">Registros en Tirillas</div></div>
     </div>
     <div class="card">
-        <div class="card-title">📊 Distribución de Egresos por Clasificación</div>
-        <div style="max-width:500px;margin:0 auto;">
-            <canvas id="donaGrafico"></canvas>
+        <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;">
+            <span>📊 Distribución de Egresos por Clasificación (Treemap)</span>
         </div>
-        <div id="dashDonaEmpty" style="font-size:13px;color:#8b949e;text-align:center;padding:10px;">Cargando...</div>
+        <div id="treemapGrafico" style="width:100%;height:400px;"></div>
+        <div id="dashTreemapEmpty" style="font-size:13px;color:#8b949e;text-align:center;padding:10px;">Cargando...</div>
     </div>
     <div class="card">
         <div class="card-title" style="color:#d2a8ff;">📊 Cascada: Neto vs Acumulado (Tirillas conceptos 6,18,24)</div>
@@ -443,8 +455,26 @@ function formatDiferencia(d) {
     h+='</tbody></table>'; return h;
 }
 
+// ---- Inicializar Google Charts ----
+google.charts.load('current', { packages: ['treemap'] });
+
+// ---- Variables globales para filtro del Dashboard ----
+let dashAnioActual = 2026;
+
+function obtenerAnioDashboard() {
+    const sel = document.getElementById('dashAnioSelect');
+    const val = sel ? sel.value : '2026';
+    return val === '' ? null : parseInt(val);
+}
+
+document.getElementById('dashAnioSelect').addEventListener('change', () => {
+    cargarDashboard();
+});
+
 // ===== DASHBOARD =====
 async function cargarDashboard() {
+    const anio = obtenerAnioDashboard();
+    dashAnioActual = anio;
     try{
         const [tirillas, disponible, dev, deudas, deudasTir] = await Promise.all([
             apiGET('/tirillas'),
@@ -453,64 +483,74 @@ async function cargarDashboard() {
             apiGET('/deudas'),
             apiGET('/deudas-tirillas')
         ]);
+
+        // ---- Filtrar tirillas y devengados por año ----
+        const tirillasFiltradas = anio ? tirillas.filter(t => t.anio === anio) : tirillas;
+        const devFiltrados = anio ? dev.filter(d => d.anio === anio) : dev;
+
+        // ---- Tarjetas superiores ----
         let ingresos=0, egresos=0;
-        tirillas.forEach(t=>{ if(t.monto_total!==null && t.monto_total>0) ingresos+=t.monto_total; else if(t.monto_total!==null) egresos+=Math.abs(t.monto_total); });
-        dev.forEach(d=>egresos+=d.monto);
-        const difTotal = disponible.reduce((s,r)=>s+r.diferencia,0);
+        tirillasFiltradas.forEach(t=>{ if(t.monto_total!==null && t.monto_total>0) ingresos+=t.monto_total; else if(t.monto_total!==null) egresos+=Math.abs(t.monto_total); });
+        devFiltrados.forEach(d=>egresos+=d.monto);
+        const sufijo = anio ? '' : ' (todos)';
         document.getElementById('dashIngresos').textContent='$'+ingresos.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g,',');
         document.getElementById('dashEgresos').textContent='$'+egresos.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g,',');
-        document.getElementById('dashDiferencia').textContent='$'+difTotal.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g,',');
-        document.getElementById('dashDiferencia').style.color=difTotal<0?'#f85149':'#3fb950';
-        document.getElementById('dashTirillas').textContent=tirillas.length;
+        const dif = ingresos - egresos;
+        document.getElementById('dashDiferencia').textContent='$'+dif.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g,',');
+        document.getElementById('dashDiferencia').style.color=dif<0?'#f85149':'#3fb950';
 
-        // ---- Gráfica de dona: Egresos por clasificación ----
-        const donaEl = document.getElementById('donaGrafico');
-        const donaEmpty = document.getElementById('dashDonaEmpty');
-        if (dev && dev.length > 0) {
-            donaEmpty.style.display = 'none';
+        // ---- Gráfica Treemap: Egresos por clasificación ----
+        const treemapEl = document.getElementById('treemapGrafico');
+        const treemapEmpty = document.getElementById('dashTreemapEmpty');
+        if (devFiltrados && devFiltrados.length > 0) {
+            treemapEmpty.style.display = 'none';
             const clasifMap = {};
-            dev.forEach(d => {
+            devFiltrados.forEach(d => {
                 const key = d.desc_clas || 'Sin clasificar';
                 clasifMap[key] = (clasifMap[key] || 0) + d.monto;
             });
-            const labels = Object.keys(clasifMap);
-            const values = Object.values(clasifMap);
-            const colores = ['#f85149','#d2a8ff','#58a6ff','#3fb950','#bb8009','#1f6feb','#da3633','#9e6a03','#238636','#7ee787'];
-            if (window.donaChart) window.donaChart.destroy();
-            window.donaChart = new Chart(donaEl.getContext('2d'), {
-                type: 'doughnut',
-                data: {
-                    labels,
-                    datasets: [{
-                        data: values,
-                        backgroundColor: labels.map((_, i) => colores[i % colores.length]),
-                        borderColor: '#161b22',
-                        borderWidth: 2
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    plugins: {
-                        legend: {
-                            position: 'right',
-                            labels: { color: '#c9d1d9', padding: 12, font: { size: 12 } }
-                        }
-                    }
+            // Google Treemap: [ID, Parent, Label, Value]
+            const dataArr = [['Clasificacion', 'Parent', 'Label', 'Monto']];
+            dataArr.push(['Total', null, 'Total Egresos', 0]);
+            let totalTreemap = 0;
+            for (const [clasif, monto] of Object.entries(clasifMap)) {
+                const id = clasif.replace(/[^a-zA-Z0-9]/g, '_');
+                dataArr.push([id, 'Total', clasif, Math.round(monto)]);
+                totalTreemap += monto;
+            }
+            // Update Total cell
+            dataArr[1][3] = Math.round(totalTreemap) || 1;
+
+            const data = google.visualization.arrayToDataTable(dataArr);
+            if (window.treemapChart) window.treemapChart.clearChart();
+            window.treemapChart = new google.visualization.TreeMap(treemapEl);
+            window.treemapChart.draw(data, {
+                minColor: '#f85149',
+                midColor: '#d2a8ff',
+                maxColor: '#3fb950',
+                headerHeight: 20,
+                fontColor: 'white',
+                fontSize: 13,
+                showTooltips: true,
+                generateTooltip: function(row, size, value) {
+                    const label = data.getValue(row, 2);
+                    return '<div style="background:#161b22;color:#c9d1d9;padding:8px 12px;border-radius:6px;font-size:13px;">' +
+                           '<b>' + label + '</b><br/>$' + Number(value).toLocaleString('en-US', {minimumFractionDigits:2}) +
+                           '</div>';
                 }
             });
         } else {
-            donaEmpty.style.display = 'block';
-            donaEmpty.textContent = '📭 No hay egresos registrados.';
+            treemapEmpty.style.display = 'block';
+            treemapEmpty.textContent = '📭 No hay egresos registrados para el año seleccionado.';
         }
 
-        // Combinar deudas de devengado (clasif 7) + tirillas (conceptos 13, 31)
+        // ---- Deudas ----
         let hayDeudas = (deudas && deudas.length > 0) || (deudasTir && deudasTir.length > 0);
         if (!hayDeudas) {
             document.getElementById('dashDeudas').innerHTML='<span style="color:#3fb950;">✅ No hay deudas pendientes.</span>';
         } else {
             let totalGeneral = 0, totalPagos = 0;
             let h = '<table><thead><tr><th>Origen</th><th>Concepto</th><th>Pagos Ptes.</th><th>Total</th></tr></thead><tbody>';
-            // Deudas desde devengado (clasif 7)
             if (deudas && deudas.length > 0) {
                 for (const r of deudas) {
                     h += `<tr><td>📋 Devengado</td><td>${r.concepto}</td><td style="text-align:center;">${r.cantidad}</td><td style="text-align:right;font-weight:600;color:#f85149;">${formatMoney(r.total_monto)}</td></tr>`;
@@ -518,7 +558,6 @@ async function cargarDashboard() {
                     totalPagos += r.cantidad;
                 }
             }
-            // Deudas desde tirillas (conceptos 13, 31)
             if (deudasTir && deudasTir.length > 0) {
                 for (const r of deudasTir) {
                     h += `<tr><td>📄 Tirillas</td><td>${r.concepto}</td><td style="text-align:center;">${r.cantidad}</td><td style="text-align:right;font-weight:600;color:#f85149;">${formatMoney(r.total_monto)}</td></tr>`;
@@ -531,18 +570,16 @@ async function cargarDashboard() {
             document.getElementById('dashDeudas').innerHTML = h;
         }
 
-        // ---- Gráfica de cascada: Neto vs Acumulado (solo 2026) ----
+        // ---- Cascada (siempre todos los años) ----
         try {
             const cascada = await apiGET('/cascada');
             const cascadaEl = document.getElementById('cascadaGrafico');
             const cascadaEmpty = document.getElementById('dashCascadaEmpty');
-            // Filtrar solo año 2026 para mostrar
             const cascada2026 = cascada.filter(r => r.anio === 2026);
             if (cascada2026 && cascada2026.length > 0) {
                 cascadaEmpty.style.display = 'none';
                 const labels = cascada2026.map(r => r.anio + '-' + String(r.periodo).padStart(2,'0'));
                 const neto = cascada2026.map(r => r.neto);
-                // Acumulado real de la BD (arrastra valores desde 2017+)
                 const acumulado = cascada2026.map(r => r.acumulado);
                 if (window.cascadaChart) window.cascadaChart.destroy();
                 window.cascadaChart = new Chart(cascadaEl.getContext('2d'), {
@@ -578,9 +615,7 @@ async function cargarDashboard() {
                         responsive: true,
                         interaction: { mode: 'index', intersect: false },
                         plugins: {
-                            legend: {
-                                labels: { color: '#c9d1d9', font: { size: 12 } }
-                            },
+                            legend: { labels: { color: '#c9d1d9', font: { size: 12 } } },
                             tooltip: {
                                 callbacks: {
                                     label: function(ctx) {
@@ -590,18 +625,8 @@ async function cargarDashboard() {
                             }
                         },
                         scales: {
-                            x: {
-                                ticks: { color: '#8b949e', font: { size: 11 } },
-                                grid: { color: '#21262d' }
-                            },
-                            y: {
-                                beginAtZero: true,
-                                ticks: {
-                                    color: '#8b949e',
-                                    callback: function(value) { return '$' + value.toLocaleString(); }
-                                },
-                                grid: { color: '#21262d' }
-                            }
+                            x: { ticks: { color: '#8b949e', font: { size: 11 } }, grid: { color: '#21262d' } },
+                            y: { beginAtZero: true, ticks: { color: '#8b949e', callback: function(value) { return '$' + value.toLocaleString(); } }, grid: { color: '#21262d' } }
                         }
                     }
                 });
