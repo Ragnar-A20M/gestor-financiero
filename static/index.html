@@ -509,17 +509,19 @@ async function cargarDashboard() {
                 const key = d.desc_clas || 'Sin clasificar';
                 clasifMap[key] = (clasifMap[key] || 0) + d.monto;
             });
-            // Google Treemap: [ID, Parent, Label, Value]
+            // Google Treemap: [ID, Parent, Label, Value] con IDs numéricos únicos
+            const entries = Object.entries(clasifMap);
             const dataArr = [['Clasificacion', 'Parent', 'Label', 'Monto']];
-            dataArr.push(['Total', null, 'Total Egresos', 0]);
+            // Nodo raíz con ID 'root'
+            dataArr.push(['root', null, 'Total Egresos', 0]);
             let totalTreemap = 0;
-            for (const [clasif, monto] of Object.entries(clasifMap)) {
-                const id = clasif.replace(/[^a-zA-Z0-9]/g, '_');
-                dataArr.push([id, 'Total', clasif, Math.round(monto)]);
+            let idx = 0;
+            for (const [clasif, monto] of entries) {
+                const id = 'c' + (++idx);
+                dataArr.push([id, 'root', clasif, Math.round(monto * 100) / 100]);
                 totalTreemap += monto;
             }
-            // Update Total cell
-            dataArr[1][3] = Math.round(totalTreemap) || 1;
+            dataArr[1][3] = Math.round(totalTreemap * 100) / 100;
 
             const data = google.visualization.arrayToDataTable(dataArr);
             if (window.treemapChart) window.treemapChart.clearChart();
@@ -531,7 +533,7 @@ async function cargarDashboard() {
                 headerHeight: 20,
                 fontColor: 'white',
                 fontSize: 13,
-                showTooltips: true,
+                showScale: true,
                 generateTooltip: function(row, size, value) {
                     const label = data.getValue(row, 2);
                     return '<div style="background:#161b22;color:#c9d1d9;padding:8px 12px;border-radius:6px;font-size:13px;">' +
