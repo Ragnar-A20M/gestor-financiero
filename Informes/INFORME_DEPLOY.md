@@ -246,3 +246,37 @@ fly secrets set \
 
 ```
 https://gestor-financiero.fly.dev
+
+---
+
+## 📝 Modificaciones — 21/Jul/2026
+
+### Cambios realizados
+
+#### 1. Nueva consulta de cascada acumulada en Dashboard
+
+Se agregó un endpoint y gráfica que muestra el neto vs acumulado de tirillas con conceptos 6, 18, 24.
+
+**Archivos modificados:**
+
+| Archivo | Cambio |
+|---------|--------|
+| `src/db.rs` | ✅ Nuevo struct `CascadaResult` (anio, periodo, total, neto, acumulado) |
+| `src/db.rs` | ✅ Nueva función `get_cascada()` con consulta SQL que agrupa por año/período y calcula `SUM(neto) OVER (ORDER BY anio, periodo)` |
+| `src/main.rs` | ✅ Nuevo handler `api_get_cascada()` |
+| `src/main.rs` | ✅ Nueva ruta `GET /api/cascada` |
+| `static/index.html` | ✅ Nueva tarjeta en Dashboard con canvas `#cascadaGrafico` |
+| `static/index.html` | ✅ Gráfico combinado: barras neto (verde/rojo) + línea acumulado (púrpura con área) |
+| `static/index.html` | ✅ Filtro visual solo para año 2026 (acumulado real arrastrado desde años anteriores) |
+
+#### 2. Corrección de esquema BD
+
+Se reemplazaron las referencias incorrectas al esquema `segmento.forma_pago` por `segmentos.forma_pago`:
+
+```diff
+- JOIN segmento.forma_pago fp ON d.forma_pago_id = fp.fp_id
++ JOIN segmentos.forma_pago fp ON d.forma_pago_id = fp.fp_id
+
+- SELECT fp_id, desc_fp FROM segmento.forma_pago
++ SELECT fp_id, desc_fp FROM segmentos.forma_pago
+```
