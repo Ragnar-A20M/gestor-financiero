@@ -510,6 +510,10 @@ async function cargarDashboard() {
             }
         });
         devFiltrados.forEach(d=>egresos+=d.monto);
+        // Sumar deudas tirillas (conceptos 13, 31) a egresos
+        if (deudasTir && deudasTir.length > 0) {
+            deudasTir.forEach(d => egresos += d.total_monto);
+        }
         const ingresosNetos = ingresosBrutos - impuestos - afore;
         document.getElementById('dashIngresosBrutos').textContent='$'+ingresosBrutos.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g,',');
         document.getElementById('dashImpuestos').textContent='$'+impuestos.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g,',');
@@ -520,16 +524,22 @@ async function cargarDashboard() {
         document.getElementById('dashDiferencia').textContent='$'+dif.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g,',');
         document.getElementById('dashDiferencia').style.color=dif<0?'#f85149':'#3fb950';
 
-        // ---- Gráfica Treemap (ECharts): Egresos por clasificación ----
+        // ---- Gráfica Treemap (ECharts): Egresos por clasificación + tirillas deudas ----
         const treemapEl = document.getElementById('treemapGrafico');
         const treemapEmpty = document.getElementById('dashTreemapEmpty');
-        if (devFiltrados && devFiltrados.length > 0) {
+        if ((devFiltrados && devFiltrados.length > 0) || (deudasTir && deudasTir.length > 0)) {
             treemapEmpty.style.display = 'none';
             const clasifMap = {};
             devFiltrados.forEach(d => {
                 const key = d.desc_clas || 'Sin clasificar';
                 clasifMap[key] = (clasifMap[key] || 0) + d.monto;
             });
+            // Agregar tirillas deudas (conceptos 13, 31) al treemap
+            if (deudasTir && deudasTir.length > 0) {
+                deudasTir.forEach(d => {
+                    clasifMap[d.concepto] = (clasifMap[d.concepto] || 0) + d.total_monto;
+                });
+            }
             const colores = ['#f85149','#d2a8ff','#58a6ff','#3fb950','#bb8009','#1f6feb','#da3633','#9e6a03','#238636','#7ee787','#c9d1d9','#484f58'];
             let idx = 0;
             const data = Object.entries(clasifMap).map(([name, value]) => ({
