@@ -566,20 +566,30 @@ pub async fn get_deudas_pendientes(pool: &PgPool) -> Result<Vec<DeudaPendiente>,
     Ok(rows)
 }
 
-/// Obtiene deudas desde tirillas (conceptos 13, 31, estatus_id = 0) agrupadas por concepto.
-pub async fn get_deudas_tirillas(pool: &PgPool) -> Result<Vec<DeudaTirilla>, sqlx::Error> {
-    let rows = sqlx::query_as::<_, DeudaTirilla>(
+/// Obtiene deudas desde tirillas (conceptos 13, 31, estatus_id = 1) agrupadas por concepto.
+pub async fn get_deudas_tirillas(pool: &PgPool, anio: Option<i16>) -> Result<Vec<DeudaTirilla>, sqlx::Error> {
+    use sqlx::QueryBuilder;
+
+    let mut builder = QueryBuilder::new(
         "SELECT cc.concepto, SUM(tir.monto_abs)::float8 AS total_monto, \
                 COUNT(*)::int AS cantidad \
          FROM ingresos.tirillas tir \
          INNER JOIN catalogos.conceptos cc ON tir.concepto_id = cc.concept_id \
-         WHERE tir.estatus_id = 0 \
-           AND tir.concepto_id IN (13, 31) \
-         GROUP BY cc.concepto \
-         ORDER BY cc.concepto"
-    )
-    .fetch_all(pool)
-    .await?;
+         WHERE tir.estatus_id = 1 \
+           AND tir.concepto_id IN (13, 31)"
+    );
+
+    if let Some(a) = anio {
+        builder.push(" AND tir.anio = ");
+        builder.push_bind(a);
+    }
+
+    builder.push(" GROUP BY cc.concepto ORDER BY cc.concepto");
+
+    let rows = builder
+        .build_query_as::<DeudaTirilla>()
+        .fetch_all(pool)
+        .await?;
     Ok(rows)
 }
 

@@ -481,7 +481,7 @@ async function cargarDashboard() {
             apiGET('/disponible'),
             apiGET('/devengados'),
             apiGET('/deudas'),
-            apiGET('/deudas-tirillas')
+            apiGET(`/deudas-tirillas?anio=${anio || ''}`)
         ]);
 
         // ---- Filtrar por año y estatus real (estatus_id = 1) ----

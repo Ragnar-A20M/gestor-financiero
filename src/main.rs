@@ -566,8 +566,9 @@ async fn api_get_deudas(
 
 async fn api_get_deudas_tirillas(
     State(state): State<Arc<AppState>>,
+    Query(filtro): Query<AnioFiltro>,
 ) -> Result<Json<Vec<DeudaTirilla>>, (StatusCode, String)> {
-    db::get_deudas_tirillas(&state.db).await.map(Json).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
+    db::get_deudas_tirillas(&state.db, filtro.anio).await.map(Json).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
 }
 
 async fn api_get_fecha_cobro(
