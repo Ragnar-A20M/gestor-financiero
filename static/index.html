@@ -483,9 +483,9 @@ async function cargarDashboard() {
             apiGET('/deudas-tirillas')
         ]);
 
-        // ---- Filtrar por año y estatus real (estatus_id = 0) ----
-        const tirillasFiltradas = (anio ? tirillas.filter(t => t.anio === anio) : tirillas).filter(t => t.estatus_id === 0);
-        const devFiltrados = (anio ? dev.filter(d => d.anio === anio) : dev).filter(d => d.estatus_id === 0);
+        // ---- Filtrar por año y estatus real (estatus_id = 1) ----
+        const tirillasFiltradas = (anio ? tirillas.filter(t => t.anio === anio) : tirillas).filter(t => t.estatus_id === 1);
+        const devFiltrados = (anio ? dev.filter(d => d.anio === anio) : dev).filter(d => d.estatus_id === 1);
 
         // ---- Tarjetas superiores ----
         let ingresosBrutos=0, impuestos=0, egresos=0;
