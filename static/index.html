@@ -179,7 +179,9 @@
         <span style="color:#8b949e;font-size:12px;margin-left:4px;">(filtra tarjetas y treemap)</span>
     </div>
     <div class="dash-grid" id="dashGrid">
-        <div class="dash-card ing"><div class="icon">📈</div><div class="value" id="dashIngresos">-</div><div class="label">Total Ingresos (tipo 1,3)</div></div>
+        <div class="dash-card ing"><div class="icon">📈</div><div class="value" id="dashIngresosBrutos">-</div><div class="label">Total Ingresos Brutos</div></div>
+        <div class="dash-card ing"><div class="icon">📉</div><div class="value" id="dashImpuestos">-</div><div class="label">Impuestos (concepto 21)</div></div>
+        <div class="dash-card ing"><div class="icon">📈</div><div class="value" id="dashIngresosNetos">-</div><div class="label">Total Ingresos Netos</div></div>
         <div class="dash-card egr"><div class="icon">📉</div><div class="value" id="dashEgresos">-</div><div class="label">Total Egresos</div></div>
         <div class="dash-card dif"><div class="icon">⚖️</div><div class="value" id="dashDiferencia">-</div><div class="label">Diferencia Neta</div></div>
     </div>
@@ -486,13 +488,29 @@ async function cargarDashboard() {
         const devFiltrados = anio ? dev.filter(d => d.anio === anio) : dev;
 
         // ---- Tarjetas superiores ----
-        let ingresos=0, egresos=0;
-        tirillasFiltradas.forEach(t=>{ if(t.monto_total!==null && t.monto_total>0) ingresos+=t.monto_total; else if(t.monto_total!==null) egresos+=Math.abs(t.monto_total); });
+        let ingresosBrutos=0, impuestos=0, egresos=0;
+        tirillasFiltradas.forEach(t=>{
+            if(t.monto_total!==null){
+                if(t.monto_total>0) {
+                    // Ingresos brutos (tipo 1,3)
+                    ingresosBrutos+=t.monto_total;
+                } else {
+                    // Impuestos (concepto 21) o egresos
+                    if(t.concepto_id === 21) {
+                        impuestos+=Math.abs(t.monto_total);
+                    } else {
+                        egresos+=Math.abs(t.monto_total);
+                    }
+                }
+            }
+        });
         devFiltrados.forEach(d=>egresos+=d.monto);
-        const sufijo = anio ? '' : ' (todos)';
-        document.getElementById('dashIngresos').textContent='$'+ingresos.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g,',');
+        const ingresosNetos = ingresosBrutos - impuestos;
+        document.getElementById('dashIngresosBrutos').textContent='$'+ingresosBrutos.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g,',');
+        document.getElementById('dashImpuestos').textContent='$'+impuestos.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g,',');
+        document.getElementById('dashIngresosNetos').textContent='$'+ingresosNetos.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g,',');
         document.getElementById('dashEgresos').textContent='$'+egresos.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g,',');
-        const dif = ingresos - egresos;
+        const dif = ingresosNetos - egresos;
         document.getElementById('dashDiferencia').textContent='$'+dif.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g,',');
         document.getElementById('dashDiferencia').style.color=dif<0?'#f85149':'#3fb950';
 
